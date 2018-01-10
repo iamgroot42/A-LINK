@@ -3,7 +3,8 @@ import cv2
 
 
 class Noise:
-	def __init__(self):
+	def __init__(self, model=None):
+		self.model = model
 		pass
 
 	def addIndividualNoise(self, image):
@@ -18,6 +19,7 @@ class Noise:
 
 class Gaussian(Noise):
 	def __init__(self, mean=0, var=0.1):
+		super(Gaussian, self).__init__()
 		self.mean = mean
 		self.var = var
 		self.sigma = self.var ** 0.5
@@ -32,6 +34,7 @@ class Gaussian(Noise):
 
 class SaltPepper(Noise):
 	def __init__(self, s_vs_p=0.5, amount=0.004):
+		super(SaltPepper, self).__init__()
 		self.s_vs_p = s_vs_p
 		self.amount = amount
 
@@ -51,6 +54,9 @@ class SaltPepper(Noise):
 
 
 class Poisson(Noise):
+	def __init__(self):
+		super(Poisson, self).__init__()
+
 	def addIndividualNoise(self, image):
 		vals = len(np.unique(image))
 		vals = 2 ** np.ceil(np.log2(vals))
@@ -59,6 +65,9 @@ class Poisson(Noise):
 
 
 class Speckle(Noise):
+	def __init__(self):
+		super(Speckle, self).__init__()
+
 	def addIndividualNoise(self, image):
 		row, col, ch = image.shape
 		gauss = np.random.randn(row, col, ch)
