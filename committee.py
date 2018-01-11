@@ -33,7 +33,7 @@ class Bagging:
 			predicted = keras.utils.to_categorical(np.array(predicted), self.n_classes)
 		return predicted
 
-	def resize(images, new_size):
+	def resize(self, images, new_size):
 		resized_images = []
 		for image in images:
 			resized_images.append(cv2.resize(image, new_size))
