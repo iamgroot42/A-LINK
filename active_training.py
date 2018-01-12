@@ -26,6 +26,7 @@ def init_data(data_dir):
 if __name__ == "__main__":
 	import sys
 	(unl_x, unl_y), (x_hr,y_hr), (x_lr,y_lr) = init_data(sys.argv[1])
+	print('Loaded data')
 	x_highres = load_data.resize(x_hr, HIGHRES)
 
 	ensemble = [model.VGG16(HIGHRES, N_CLASSES), model.RESNET50(HIGHRES, N_CLASSES, 512), model.SENET50(HIGHRES, N_CLASSES)]
@@ -34,10 +35,12 @@ if __name__ == "__main__":
 	# Finetune high-resolution models
 	for individualModel in ensemble:
 		individualModel.finetune(x_highres, y_hr, 50, 1.0, 16)
+	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
 	lowResModel.finetune(x_lr, y_lr, 50, 0.01, 16)
+	print('Finetuned low resolution model')
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)

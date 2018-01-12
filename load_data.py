@@ -33,37 +33,36 @@ def construct_data(images_dir):
 		img.load()
 		image = np.asarray( img, dtype="int32" )
 		X.append(preprocess_image(image))
-		Y.append(int(person_class))
+		Y.append(int(person_class)-1)
 	X = np.array(X)
 	Y = np.array(Y)
 	return X, Y		
 
 
-def data_split(X, Y, pool_split=0.8):
-	nb_classes = Y.shape[1]
+def data_split(X, Y, nb_classes, pool_split=0.8):
 	distr = {}
 	for i in range(nb_classes):
 		distr[i] = []
-	if Y.shape[1] == nb_classes:
-		for i in range(len(Y)):
-			distr[np.argmax(Y[i])].append(i)
-	else:
-		for i in range(len(Y)):
-			distr[Y[i][0]].append(i)
+	for i in range(len(Y)):
+		distr[Y[i]].append(i)
 	X_bm_ret = []
 	Y_bm_ret = []
 	X_pm_ret = []
 	Y_pm_ret = []
-	# Calculate minimum number of points per class
-	n_points = min([len(distr[i]) for i in distr.keys()])
+
 	for key in distr.keys():
-		st = np.random.choice(distr[key], n_points, replace=False)
+		if len(distr[key]) == 0:
+			continue
+		st = np.random.choice(distr[key], distr[key], replace=False)
 		bm = st[:int(len(st)*pool_split)]
 		pm = st[int(len(st)*pool_split):]
-		X_bm_ret.append(X[bm])
-		Y_bm_ret.append(Y[bm])
-		X_pm_ret.append(X[pm])
-		Y_pm_ret.append(Y[pm])
+		if len(bm) > 0:
+			X_bm_ret.append(X[bm])
+			Y_bm_ret.append(Y[bm])
+		if len(pm) > 0:
+			X_pm_ret.append(X[pm])
+			Y_pm_ret.append(Y[pm])
+	print len(X_bm_ret)
 	X_bm_ret = np.concatenate(X_bm_ret)
 	Y_bm_ret = np.concatenate(Y_bm_ret)
 	X_pm_ret = np.concatenate(X_pm_ret)
@@ -72,8 +71,9 @@ def data_split(X, Y, pool_split=0.8):
 	
 
 def split_into_sets(X, Y, lowres=(32,32), pool_ratio=0.75, big_ratio=0.5):
-	X_unlabelled, Y_unlabelled, rest_x, rest_y = data_split(X, Y, pool_ratio)
-	X_hr, Y_hr, X_lr, Y_lr = data_split(rest_x, rest_y, big_ratio)
+	n_classes = np.max(Y) + 1
+	X_unlabelled, Y_unlabelled, rest_x, rest_y = data_split(X, Y, n_classes, pool_ratio)
+	X_hr, Y_hr, X_lr, Y_lr = data_split(rest_x, rest_y, n_classes, big_ratio)
 	# Downsize images for LR format
 	X_lr = resize(X_lr, lowres)
 	return (X_unlabelled, Y_unlabelled), (X_hr, Y_hr), (X_lr, Y_lr)
