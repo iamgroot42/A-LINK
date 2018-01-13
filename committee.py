@@ -15,7 +15,7 @@ class Bagging:
 		predictions = []
 		for model in self.models:
 			predictions.append(model.predict(predict_on))
-		predicted = np.argmax(np.sum(np.array(predictions),axis=0),axis=1)
+		predicted = np.sum(np.array(predictions),axis=0) / len(self.models)
 		predicted = np.array(predicted)
 		return predicted
 
@@ -31,7 +31,7 @@ class Bagging:
 		for i, model in enumerate(self.models):
 			X = self.attacks[i].addNoise(images)
 			Y = model.predict(images)
-			attackPairs.append(X, Y)
+			attackPairs.append((X, Y))
 		# Heuristic to combine these attack sample points
 		# finalizedImages = []
 		# return self.resize(finalizedImages, target_size)

@@ -16,6 +16,10 @@ class CustomModel:
 		self.out_dim = out_dim
 		pass
 
+	def preprocess(self, X):
+		# Pre-process input
+		pass
+
 	def finetune(self, X, Y, epochs, batch_size):
 		# Add implementation
 		pass
@@ -40,12 +44,14 @@ class FaceVGG16(CustomModel, object):
 		#self.model.compile(loss=categorical_crossentropy,
 		#	optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
+	def preprocess(self, X):
+		return utils.preprocess_input(X, version=1)
+
 	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(X, Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
 	def predict(self, X):
-		x_tr = utils.preprocess_input(X, version=1)
-		preds = self.model.predict(x_tr)
+		preds = self.model.predict(self.preprocess(X))
 		return preds
 
 
@@ -60,13 +66,14 @@ class RESNET50(CustomModel, object):
 		self.model.compile(loss=categorical_crossentropy,
 			optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
+	def preprocess(self, X):
+		return utils.preprocess_input(X, version=2)
+
 	def finetune(self, X, Y, epochs, batch_size):
-		print Y.shape, self.out_dim
-		self.model.fit(X, Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
 	def predict(self, X):
-		x_tr = utils.preprocess_input(X, version=2)
-		preds = self.model.predict(x_tr)
+		preds = self.model.predict(self.preprocess(X))
 		return preds
 
 
@@ -81,12 +88,14 @@ class SENET50(CustomModel, object):
 		#self.model.compile(loss=categorical_crossentropy,
 		#	optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
+	def preprocess(self, X):
+                return utils.preprocess_input(X, version=2)
+
 	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(X, Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
 	def predict(self, X):
-		x_tr = utils.preprocess_input(X, version=2)
-		preds = self.model.predict(x_tr)
+		preds = self.model.predict(self.preprocess(X))
 		return preds
 
 
@@ -118,8 +127,11 @@ class SmallRes(CustomModel, object):
 		self.model.compile(loss=categorical_crossentropy,
 			optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])
 
+	def preprocess(self, X):
+                return X / 255.0
+
 	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(X, Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
 	def predict(self, X):
-		return self.model.predict(X)
+		return self.model.predict(self.preprocess(X))

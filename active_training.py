@@ -65,7 +65,7 @@ if __name__ == "__main__":
 		noisy_data = bag.attackModel(highres_batch_x, LOWRES)
 
 		# Pass these to low res model, get predictions
-		lowResPredictions = lowresModel.predict(noisy_data)
+		lowResPredictions = lowresModel.predict(x_lr)
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
@@ -76,11 +76,11 @@ if __name__ == "__main__":
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if np.argmax(ensemblePredictions[j]) == unl_y[i * BATCH_SIZE: (i+1)* BATCH_SIZE][j]:
+			if np.argmax(ensemblePredictions[j]) == np.argmax(unl_y[i * BATCH_SIZE: (i+1)* BATCH_SIZE][j]):
 				queryIndices.append(j)
 
 		# Update count of queries to oracle
 		ACTIVE_COUNT += len(queryIndices)
 
 		# Finetune low res model with this actively selected data points
-		lowResModel.finetune(batch_x[queryIndices], ensemblePredictions[queryIndices], 1, 16)
+		lowResModel.finetune(batch_x[queryIndices], one_hot(ensemblePredictions[queryIndices]), 1, 16)

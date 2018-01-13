@@ -2,7 +2,6 @@ import numpy as np
 import Image
 import os
 import cv2
-from tqdm import tqdm
 
 # Set seed for reproducability
 np.random.seed(42)
@@ -10,29 +9,23 @@ np.random.seed(42)
 
 def resize(images, new_size):
 	resized_images = []
-	images_tr = images * 255.0
-	images_tr = images_tr.astype("int32") 
+	images_tr = images.astype("int32") 
 	for image in images:
 		resized_images.append(cv2.resize(image, new_size))
 	resized_images = np.array(resized_images)
 	resized_images = resized_images.astype("float32")
-	resized_images /= 255.0
 	return np.array(resized_images)
-
-
-def preprocess_image(X):
-	return X.astype("float32") / 255.0
 
 
 def construct_data(images_dir):
 	Y = []
 	X = []
-	for image_path in tqdm(os.listdir(images_dir)):
+	for image_path in os.listdir(images_dir):
 		person_class =  image_path.split('.')[0].split('_')[0]
 		img = Image.open(os.path.join(images_dir, image_path))
 		img.load()
 		image = np.asarray( img, dtype="int32" )
-		X.append(preprocess_image(image))
+		X.append(image.astype('float32'))
 		Y.append(int(person_class)-1)
 	X = np.array(X)
 	Y = np.array(Y)
