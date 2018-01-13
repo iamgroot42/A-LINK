@@ -19,8 +19,15 @@ ACTIVE_COUNT = 0
 def init_data(data_dir):
 	global LOWRES, POOLRATIO, BIGRATIO, N_CLASSES
 	X, Y = load_data.construct_data(data_dir)
-	N_CLASSES = len(np.unique(Y))
+	N_CLASSES = np.max(Y) + 1
 	return load_data.split_into_sets(X, Y, lowres=LOWRES, pool_ratio=POOLRATIO, big_ratio=BIGRATIO)
+
+
+def one_hot(Y):
+	global N_CLASSES
+	y_ = np.zeros((len(Y), N_CLASSES))
+	y_[np.arange(len(Y)), Y] = 1
+	return y_
 
 
 if __name__ == "__main__":
@@ -29,17 +36,18 @@ if __name__ == "__main__":
 	print('Loaded data')
 	x_highres = load_data.resize(x_hr, HIGHRES)
 
-	ensemble = [model.VGG16(HIGHRES, N_CLASSES), model.RESNET50(HIGHRES, N_CLASSES, 512), model.SENET50(HIGHRES, N_CLASSES)]
+	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
+	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetune(x_highres, y_hr, 50, 1.0, 16)
+		individualModel.finetune(x_highres, one_hot(y_hr), 1, 16)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetune(x_lr, y_lr, 50, 0.01, 16)
+	lowResModel.finetune(x_lr, one_hot(y_lr), 1, 16)
 	print('Finetuned low resolution model')
 
 	# Ready committee of models
@@ -75,4 +83,4 @@ if __name__ == "__main__":
 		ACTIVE_COUNT += len(queryIndices)
 
 		# Finetune low res model with this actively selected data points
-		lowResModel.finetune(batch_x[queryIndices], ensemblePredictions[queryIndices])
+		lowResModel.finetune(batch_x[queryIndices], ensemblePredictions[queryIndices], 1, 16)

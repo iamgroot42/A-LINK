@@ -10,7 +10,7 @@ np.random.seed(42)
 
 def resize(images, new_size):
 	resized_images = []
-	images_tr *= 255.0
+	images_tr = images * 255.0
 	images_tr = images_tr.astype("int32") 
 	for image in images:
 		resized_images.append(cv2.resize(image, new_size))
@@ -53,7 +53,7 @@ def data_split(X, Y, nb_classes, pool_split=0.8):
 	for key in distr.keys():
 		if len(distr[key]) == 0:
 			continue
-		st = np.random.choice(distr[key], distr[key], replace=False)
+		st = np.random.choice(distr[key], len(distr[key]), replace=False)
 		bm = st[:int(len(st)*pool_split)]
 		pm = st[int(len(st)*pool_split):]
 		if len(bm) > 0:
@@ -62,7 +62,6 @@ def data_split(X, Y, nb_classes, pool_split=0.8):
 		if len(pm) > 0:
 			X_pm_ret.append(X[pm])
 			Y_pm_ret.append(Y[pm])
-	print len(X_bm_ret)
 	X_bm_ret = np.concatenate(X_bm_ret)
 	Y_bm_ret = np.concatenate(Y_bm_ret)
 	X_pm_ret = np.concatenate(X_pm_ret)

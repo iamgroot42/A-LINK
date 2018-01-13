@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 
 
-class Noise:
+class Noise(object):
 	def __init__(self, model=None):
 		self.model = model
 		pass

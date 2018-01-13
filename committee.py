@@ -6,10 +6,10 @@ class Bagging:
 	def __init__(self, n_classes, models, attacks):
 		self.n_classes = n_classes
 		self.models = models
-		assert(len(attacks) == len(os.listdir(self.models)))
+		assert(len(attacks) == len(self.models))
 		self.attacks = []
-		for i, attack in enumerate(attacks):
-			self.attacks.append(attack(self.models[i]))
+		for attack in attacks:
+			self.attacks.append(attack)
 
 	def predict(self, predict_on):
 		predictions = []
