@@ -5,8 +5,9 @@ from keras.layers import Flatten, Dense, Input, Activation, Dropout
 from keras.layers import Conv2D, MaxPooling2D
 from keras_vggface.vggface import VGGFace
 from keras_vggface import utils
-
 from keras.optimizers import Adadelta, SGD, rmsprop
+
+import numpy as np
 import cv2
 
 
@@ -45,7 +46,8 @@ class FaceVGG16(CustomModel, object):
 		#	optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
 	def preprocess(self, X):
-		return utils.preprocess_input(X, version=1)
+		X_temp = np.copy(X)
+		return utils.preprocess_input(X_temp, version=1)
 
 	def finetune(self, X, Y, epochs, batch_size):
 		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
@@ -67,7 +69,8 @@ class RESNET50(CustomModel, object):
 			optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
 	def preprocess(self, X):
-		return utils.preprocess_input(X, version=2)
+		X_temp = np.copy(X)
+		return utils.preprocess_input(X_temp, version=2)
 
 	def finetune(self, X, Y, epochs, batch_size):
 		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
@@ -89,7 +92,8 @@ class SENET50(CustomModel, object):
 		#	optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
 	def preprocess(self, X):
-                return utils.preprocess_input(X, version=2)
+		X_temp = np.copy(X)
+                return utils.preprocess_input(X_temp, version=2)
 
 	def finetune(self, X, Y, epochs, batch_size):
 		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)

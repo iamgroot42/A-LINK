@@ -1,0 +1,4 @@
+tensorflow-gpu==1.4.0
+Keras==2.1.2
+keras-vggface==0.5
+-e git+http://github.com/tensorflow/cleverhans.git#egg=cleverhans

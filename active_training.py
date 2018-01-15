@@ -9,7 +9,7 @@ import numpy as np
 HIGHRES = (224, 224)
 DATARES = (50, 50)
 LOWRES = (32, 32)
-POOLRATIO = 0.75
+POOLRATIO = 0.6
 BIGRATIO = 0.5
 N_CLASSES = None
 BATCH_SIZE = 16
@@ -50,6 +50,8 @@ if __name__ == "__main__":
 	lowResModel.finetune(x_lr, one_hot(y_lr), 1, 16)
 	print('Finetuned low resolution model')
 
+	print x_lr.shape, one_hot(y_lr).shape
+
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
 	lowresModel = model.SmallRes(LOWRES, N_CLASSES)
@@ -65,10 +67,11 @@ if __name__ == "__main__":
 		noisy_data = bag.attackModel(highres_batch_x, LOWRES)
 
 		# Pass these to low res model, get predictions
-		lowResPredictions = lowresModel.predict(x_lr)
+		lowResPredictions = lowresModel.predict(noisy_data)
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
+
 		for j in range(len(lowResPredictions)):
 			if np.argmax(lowResPredictions[j]) != np.argmax(ensemblePredictions[j]):
 				misclassifiedIndices.append(j)
@@ -76,11 +79,20 @@ if __name__ == "__main__":
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if np.argmax(ensemblePredictions[j]) == np.argmax(unl_y[i * BATCH_SIZE: (i+1)* BATCH_SIZE][j]):
+			if np.argmax(ensemblePredictions[j]) == unl_y[i * BATCH_SIZE: (i+1)* BATCH_SIZE][j]:
 				queryIndices.append(j)
+
+		# If nothing matches, proceed to next set of predictions
+		if len(queryIndices) == 0:
+			continue
 
 		# Update count of queries to oracle
 		ACTIVE_COUNT += len(queryIndices)
-
+		print ensemblePredictions[queryIndices].shape
+		print noisy_data.shape, np.argmax(ensemblePredictions[queryIndices], axis=1).shape
 		# Finetune low res model with this actively selected data points
-		lowResModel.finetune(batch_x[queryIndices], one_hot(ensemblePredictions[queryIndices]), 1, 16)
+		lowResModel.finetune(noisy_data[queryIndices], np.argmax(ensemblePredictions[queryIndices], axis=1), 1, 16)
+
+		# Print count of images queried so far
+		print ACTIVE_COUNT
+

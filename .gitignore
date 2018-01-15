@@ -1,6 +1,6 @@
 # Data, Model files
-*data/*
-
+data*/*
+*.npy
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
