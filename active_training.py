@@ -42,24 +42,29 @@ if __name__ == "__main__":
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetune(x_highres, one_hot(y_hr), 1, 16)
+		individualModel.finetune(x_highres, one_hot(y_hr), 50, 16)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetune(x_lr, one_hot(y_lr), 1, 16)
+	lowResModel.finetune(x_lr, one_hot(y_lr), 25, 16)
 	print('Finetuned low resolution model')
-
-	print x_lr.shape, one_hot(y_lr).shape
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
 	lowresModel = model.SmallRes(LOWRES, N_CLASSES)
 
+	# Train low res model only when batch length crosses threshold
+	train_lr_x = np.array([])
+	train_lr_y = np.array([])
+	BATCH_SEND = 16
+
 	for i in range(0, len(unl_x), BATCH_SIZE):
 		batch_x = unl_x[i * BATCH_SIZE: (i+1)* BATCH_SIZE]
 		highres_batch_x = load_data.resize(batch_x, HIGHRES)
 
+		if highres_batch_x.shape[0] == 0:
+			break
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(highres_batch_x)
 
@@ -88,11 +93,22 @@ if __name__ == "__main__":
 
 		# Update count of queries to oracle
 		ACTIVE_COUNT += len(queryIndices)
-		print ensemblePredictions[queryIndices].shape
-		print noisy_data.shape, np.argmax(ensemblePredictions[queryIndices], axis=1).shape
-		# Finetune low res model with this actively selected data points
-		lowResModel.finetune(noisy_data[queryIndices], np.argmax(ensemblePredictions[queryIndices], axis=1), 1, 16)
+
+		# Gather data to be sent to low res model for training
+		if train_lr_x.shape[0] > 0:
+			train_lr_x = np.concatenate((train_lr_x, noisy_data[queryIndices]))
+			train_lr_y = np.concatenate((train_lr_y, one_hot(np.argmax(ensemblePredictions[queryIndices], axis=1))))
+		else:
+			train_lr_x = noisy_data[queryIndices]
+			train_lr_y = one_hot(np.argmax(ensemblePredictions[queryIndices], axis=1))
+
+		if train_lr_x.shape[0] >= BATCH_SEND:
+			# Finetune low res model with this actively selected data points
+			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16)
+			train_lr_x = np.array([])
+			train_lr_y = np.array([])
+			print "Trained low-res model again!"
 
 		# Print count of images queried so far
-		print ACTIVE_COUNT
+		print("Active Count:", ACTIVE_COUNT)
 
