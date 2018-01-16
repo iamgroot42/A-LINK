@@ -5,22 +5,22 @@ import noise
 
 import numpy as np
 
-# Global 
+# Global
 HIGHRES = (224, 224)
 DATARES = (50, 50)
 LOWRES = (32, 32)
 POOLRATIO = 0.6
 BIGRATIO = 0.5
-N_CLASSES = None
+N_CLASSES = 337
 BATCH_SIZE = 16
 ACTIVE_COUNT = 0
 
-
-def init_data(data_dir):
-	global LOWRES, POOLRATIO, BIGRATIO, N_CLASSES
-	X, Y = load_data.construct_data(data_dir)
-	N_CLASSES = np.max(Y) + 1
-	return load_data.split_into_sets(X, Y, lowres=LOWRES, pool_ratio=POOLRATIO, big_ratio=BIGRATIO)
+# Image directories
+IMAGESDIR = "data/" # Path to all images
+LOWRESIMAGESDIR = "dataFinal/lowres" # Path to low-res images
+HIGHRESIMAGESDIR = "dataFinal/highres"# Path to high-res images
+UNLABALLEDLIST = "unlabelledData.txt" # Path to unlabelled images list
+TESTDATALIST = "testData.txt"  # Path to test images list
 
 
 def one_hot(Y):
@@ -32,9 +32,14 @@ def one_hot(Y):
 
 if __name__ == "__main__":
 	import sys
-	(unl_x, unl_y), (x_hr,y_hr), (x_lr,y_lr) = init_data(sys.argv[1])
-	print('Loaded data')
-	x_highres = load_data.resize(x_hr, HIGHRES)
+
+	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(IMAGESDIR, TESTDATALIST, HIGHRES, LOWRES)
+	print('Loaded test data')
+
+	unlabelledImagesGenerator = load_data.getUnlabelledData(IMAGESDIR, UNLABALLEDLIST, BATCH_SIZE)
+
+	lowgenTrain, lowgenVal = load_data.returnGenerators(LOWRESIMAGESDIR + "/train", LOWRESIMAGESDIR + "/val", LOWRES, 16)
+	highgenTrain, highgenVal = load_data.returnGenerators(HIGHRESIMAGESDIR + "/train", HIGHRESIMAGESDIR + "/val", HIGHRES, 16)
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
@@ -42,12 +47,12 @@ if __name__ == "__main__":
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetune(x_highres, one_hot(y_hr), 50, 16)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetune(x_lr, one_hot(y_lr), 25, 16)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16)
 	print('Finetuned low resolution model')
 
 	# Ready committee of models
@@ -60,16 +65,16 @@ if __name__ == "__main__":
 	BATCH_SEND = 16
 
 	for i in range(0, len(unl_x), BATCH_SIZE):
-		batch_x = unl_x[i * BATCH_SIZE: (i+1)* BATCH_SIZE]
-		highres_batch_x = load_data.resize(batch_x, HIGHRES)
+		batch_x_lr, batch_x_hr, batch_y = unlabelledImagesGenerator.next()
 
 		if highres_batch_x.shape[0] == 0:
 			break
+
 		# Get predictions made by committee
-		ensemblePredictions = bag.predict(highres_batch_x)
+		ensemblePredictions = bag.predict(batch_x_hr)
 
 		# Get images with added noise
-		noisy_data = bag.attackModel(highres_batch_x, LOWRES)
+		noisy_data = bag.attackModel(batch_x_hr, LOWRES)
 
 		# Pass these to low res model, get predictions
 		lowResPredictions = lowresModel.predict(noisy_data)
@@ -84,7 +89,7 @@ if __name__ == "__main__":
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if np.argmax(ensemblePredictions[j]) == unl_y[i * BATCH_SIZE: (i+1)* BATCH_SIZE][j]:
+			if np.argmax(ensemblePredictions[j]) == batch_y[j]:
 				queryIndices.append(j)
 
 		# If nothing matches, proceed to next set of predictions
@@ -111,4 +116,3 @@ if __name__ == "__main__":
 
 		# Print count of images queried so far
 		print("Active Count:", ACTIVE_COUNT)
-
