@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+
 import os
 import cv2
 
@@ -19,16 +20,24 @@ def resize(images, new_size):
 
 def construct_data(images_dir):
 	Y = []
-	X = []
-	for image_path in os.listdir(images_dir):
+	# Read size of any one image from directory, use to construct placeholder data accordingly
+	image_shape = cv2.imread(os.path.join(images_dir, os.listdir(images_dir)[0])).shape
+	X_shape =  (len(os.listdir(images_dir)),) + image_shape
+	X = np.empty(X_shape, dtype='float32') 
+	from tqdm import tqdm
+	i = 0
+	for image_path in tqdm(os.listdir(images_dir)):
 		person_class =  image_path.split('.')[0].split('_')[0]
-		img = Image.open(os.path.join(images_dir, image_path))
-		img.load()
-		image = np.asarray( img, dtype="int32" )
-		X.append(image.astype('float32'))
+		#img = Image.open(os.path.join(images_dir, image_path))
+		#img.load()
+		#image = misc.imread(os.path.join(images_dir, image_path))
+		image = cv2.imread(os.path.join(images_dir, image_path))
+		#image = np.asarray(img, dtype="int32")
+		X[i] = image.astype('float32')
 		Y.append(int(person_class)-1)
-	X = np.array(X)
+		i += 1
 	Y = np.array(Y)
+	exit()
 	return X, Y		
 
 
@@ -65,6 +74,7 @@ def data_split(X, Y, nb_classes, pool_split=0.8):
 def split_into_sets(X, Y, lowres=(32,32), pool_ratio=0.75, big_ratio=0.5):
 	n_classes = np.max(Y) + 1
 	X_unlabelled, Y_unlabelled, rest_x, rest_y = data_split(X, Y, n_classes, pool_ratio)
+	del X, Y
 	X_hr, Y_hr, X_lr, Y_lr = data_split(rest_x, rest_y, n_classes, big_ratio)
 	# Downsize images for LR format
 	X_lr = resize(X_lr, lowres)

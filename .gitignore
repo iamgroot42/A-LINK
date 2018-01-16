@@ -1,5 +1,6 @@
 # Data, Model files
 data*/*
+LOG*
 *.npy
 
 # Byte-compiled / optimized / DLL files
