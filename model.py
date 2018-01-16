@@ -22,8 +22,15 @@ class CustomModel:
 		pass
 
 	def finetune(self, X, Y, epochs, batch_size):
-		# Add implementation
-		pass
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+
+	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size):
+		self.model.fit_generator(
+        	trainGen,
+        	steps_per_epoch=steps_epoch,
+        	epochs=epochs,
+        	validation_data=valGen,
+        	validation_steps=800)
 
 	def predict(self, X):
 		# Add implementation
@@ -49,9 +56,6 @@ class FaceVGG16(CustomModel, object):
 		X_temp = np.copy(X)
 		return utils.preprocess_input(X_temp, version=1)
 
-	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
-
 	def predict(self, X):
 		preds = self.model.predict(self.preprocess(X))
 		return preds
@@ -72,9 +76,6 @@ class RESNET50(CustomModel, object):
 		X_temp = np.copy(X)
 		return utils.preprocess_input(X_temp, version=2)
 
-	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
-
 	def predict(self, X):
 		preds = self.model.predict(self.preprocess(X))
 		return preds
@@ -93,10 +94,7 @@ class SENET50(CustomModel, object):
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)
-                return utils.preprocess_input(X_temp, version=2)
-
-	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+        return utils.preprocess_input(X_temp, version=2)
 
 	def predict(self, X):
 		preds = self.model.predict(self.preprocess(X))
@@ -132,10 +130,7 @@ class SmallRes(CustomModel, object):
 			optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])
 
 	def preprocess(self, X):
-                return X / 255.0
-
-	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+		return X / 255.0
 
 	def predict(self, X):
 		return self.model.predict(self.preprocess(X))

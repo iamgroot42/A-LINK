@@ -15,4 +15,3 @@ for dis in users.keys():
         os.mkdir(finalpath, 0755)
         for image in users[dis]:
                 os.rename(sys.argv[1] + image, finalpath + "/" + image)
-
