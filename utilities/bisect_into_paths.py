@@ -6,6 +6,7 @@ import numpy as np
 np.random.seed(42)
 
 imagesDir = sys.argv[1]
+filesDir = sys.argv[2]
 
 UNLABELLED_RATIO = 0.5
 TEST_RATIO = 0.1
@@ -31,19 +32,23 @@ for classFolder in os.listdir(imagesDir):
     tdPaths += imagePaths[threshold1:threshold2]
     hrPaths += imagePaths[threshold2:threshold3]
     lrPaths += imagePaths[threshold3:]
+    #print len(imagePaths[:threshold1]), "for unlabelled"
+    #print len(imagePaths[threshold1:threshold2]), "for test"
+    #print len(imagePaths[threshold2:threshold3]), "for high res"
+    #print len(imagePaths[threshold3:]), "for low res"
 
-with open("unlabelledData.txt", 'w') as f:
+with open(os.path.join(filesDir, "unlabelledData.txt"), 'w') as f:
     for path in udPaths:
         f.write(path + '\n')
 
-with open("testData.txt", 'w') as f:
+with open(os.path.join(filesDir, "testData.txt"), 'w') as f:
     for path in tdPaths:
         f.write(path + '\n')
 
-with open("highResData.txt", 'w') as f:
+with open(os.path.join(filesDir, "highResData.txt"), 'w') as f:
     for path in hrPaths:
         f.write(path + '\n')
 
-with open("lowResData.txt", 'w') as f:
+with open(os.path.join(filesDir, "lowResData.txt"), 'w') as f:
     for path in lrPaths:
         f.write(path + '\n')

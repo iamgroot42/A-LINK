@@ -11,7 +11,6 @@ for filename in os.listdir(sys.argv[1]):
 
 for dis in users.keys():
         finalpath = sys.argv[2] + dis
-        #print finalpath
         os.mkdir(finalpath, 0755)
         for image in users[dis]:
-                os.rename(sys.argv[1] + image, finalpath + "/" + image)
+                os.rename(os.path.join(sys.argv[1], image), os.path.join(finalpath, image))

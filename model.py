@@ -24,13 +24,13 @@ class CustomModel:
 	def finetune(self, X, Y, epochs, batch_size):
 		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
 
-	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size):
+	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs):
 		self.model.fit_generator(
         	trainGen,
-        	steps_per_epoch=steps_epoch,
+        	steps_per_epoch=steps_epoch // batch_size,
         	epochs=epochs,
         	validation_data=valGen,
-        	validation_steps=800)
+        	validation_steps=800 // batch_size)
 
 	def predict(self, X):
 		# Add implementation
@@ -94,7 +94,7 @@ class SENET50(CustomModel, object):
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)
-        return utils.preprocess_input(X_temp, version=2)
+        	return utils.preprocess_input(X_temp, version=2)
 
 	def predict(self, X):
 		preds = self.model.predict(self.preprocess(X))

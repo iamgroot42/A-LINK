@@ -4,6 +4,10 @@ import model
 import noise
 
 import numpy as np
+import tensorflow as tf
+import keras
+
+from keras_vggface import utils
 
 # Global
 HIGHRES = (224, 224)
@@ -17,11 +21,16 @@ ACTIVE_COUNT = 0
 
 # Image directories
 IMAGESDIR = "data/" # Path to all images
-LOWRESIMAGESDIR = "dataFinal/lowres" # Path to low-res images
-HIGHRESIMAGESDIR = "dataFinal/highres"# Path to high-res images
-UNLABALLEDLIST = "unlabelledData.txt" # Path to unlabelled images list
-TESTDATALIST = "testData.txt"  # Path to test images list
+LOWRESIMAGESDIR = "data_final/lowres" # Path to low-res images
+HIGHRESIMAGESDIR = "data_final/highres"# Path to high-res images
+UNLABALLEDLIST = "fileLists/unlabelledData.txt" # Path to unlabelled images list
+TESTDATALIST = "fileLists/testData.txt"  # Path to test images list
 
+# Don't hog GPU
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
+keras.backend.set_session(sess)
 
 def one_hot(Y):
 	global N_CLASSES
@@ -30,16 +39,24 @@ def one_hot(Y):
 	return y_
 
 
+def hr_preprocess(X):
+	X_temp = np.copy(X)
+	return utils.preprocess_input(X_temp, version=1)
+
+
+def lr_preprocess(X):
+	return X / 255.0
+
+
 if __name__ == "__main__":
-	import sys
 
 	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(IMAGESDIR, TESTDATALIST, HIGHRES, LOWRES)
 	print('Loaded test data')
 
 	unlabelledImagesGenerator = load_data.getUnlabelledData(IMAGESDIR, UNLABALLEDLIST, BATCH_SIZE)
 
-	lowgenTrain, lowgenVal = load_data.returnGenerators(LOWRESIMAGESDIR + "/train", LOWRESIMAGESDIR + "/val", LOWRES, 16)
-	highgenTrain, highgenVal = load_data.returnGenerators(HIGHRESIMAGESDIR + "/train", HIGHRESIMAGESDIR + "/val", HIGHRES, 16)
+	lowgenTrain, lowgenVal = load_data.returnGenerators(LOWRESIMAGESDIR + "/train", LOWRESIMAGESDIR + "/val", LOWRES, 16, lr_preprocess)
+	highgenTrain, highgenVal = load_data.returnGenerators(HIGHRESIMAGESDIR + "/train", HIGHRESIMAGESDIR + "/val", HIGHRES, 16, hr_preprocess)
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
@@ -47,12 +64,12 @@ if __name__ == "__main__":
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 1)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 1)
 	print('Finetuned low resolution model')
 
 	# Ready committee of models
@@ -63,11 +80,17 @@ if __name__ == "__main__":
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
 	BATCH_SEND = 16
+	UN_SIZE = 25117
 
-	for i in range(0, len(unl_x), BATCH_SIZE):
-		batch_x_lr, batch_x_hr, batch_y = unlabelledImagesGenerator.next()
+	for i in range(0, UN_SIZE, BATCH_SIZE):
+		batch_x, batch_y = unlabelledImagesGenerator.next()
+		batch_x_hr = load_data.resize(batch_x, HIGHRES)
+		batch_x_lr = load_data.resize(batch_x, LOWRES)
 
-		if highres_batch_x.shape[0] == 0:
+		if i > 1000:
+			break
+
+		if batch_x_hr.shape[0] == 0:
 			break
 
 		# Get predictions made by committee
@@ -116,3 +139,9 @@ if __name__ == "__main__":
 
 		# Print count of images queried so far
 		print("Active Count:", ACTIVE_COUNT)
+
+
+	lowresPreds = np.argmax(lowResModel.predict(X_test_lr), axis=1)
+	highresPreds = np.argmax(bag.predict(X_test_hr), axis=1)
+	numAgree = np.sum((lowresPreds == highresPreds) * 1.0)
+	print(numAgree, 'out of', len(lowresPreds), 'agree')

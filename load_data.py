@@ -1,39 +1,40 @@
 import numpy as np
 from PIL import Image
+from scipy.misc import imresize
 from keras.preprocessing.image import ImageDataGenerator
 
 import os
-import cv2
 
 # Set seed for reproducability
 np.random.seed(42)
 
 def directoryGenerator(preprofunc = None):
 	datagen = ImageDataGenerator(
-    	width_shift_range=0.15,
-    	height_shift_range=0.15,
-    	horizontal_flip=True,
-    	preprocessing_function=preprofunc)
+	    	width_shift_range=0.15,
+	    	height_shift_range=0.15,
+	    	horizontal_flip=True,
+	    	preprocessing_function=preprofunc)
 	return datagen
 
 
-def returnGenerators(train_dir, val_dir, imageSize, batchSize):
+def returnGenerators(train_dir, val_dir, imageSize, batchSize, preprofunc=None):
+	train_datagen = directoryGenerator(preprofunc)
 	train_generator = train_datagen.flow_from_directory(
-    	train_dir,
-    	target_size=imageSize,
-    	batch_size=batchSize)
+    		train_dir,
+	    	target_size=imageSize,
+	    	batch_size=batchSize)
+	test_datagen = directoryGenerator(preprofunc)
 	validation_generator = test_datagen.flow_from_directory(
-    	val_dir,
-    	target_size=imageSize,
-    	batch_size=batchSize)
+	    	val_dir,
+	    	target_size=imageSize,
+	    	batch_size=batchSize)
 	return train_generator, validation_generator
 
 
 def resize(images, new_size):
 	resized_images = []
-	images_tr = images.astype("int32")
 	for image in images:
-		resized_images.append(cv2.resize(image, new_size))
+		resized_images.append(imresize(image, new_size))
 	resized_images = np.array(resized_images)
 	resized_images = resized_images.astype("float32")
 	return np.array(resized_images)
