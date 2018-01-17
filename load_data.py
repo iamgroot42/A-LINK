@@ -48,10 +48,10 @@ def loadTestData(baseDir, imagePaths, highRes, lowRes):
 			properPath = os.path.join(baseDir, path.rstrip('\n'))
 			image = np.asarray(Image.open(properPath), dtype="int32")
 			X.append(image)
-			Y.append(int(path.split('_')[0])-1)
+			Y.append(path.split('_')[0])
 	X_lr = resize(X, lowRes)
 	X_hr = resize(X, highRes)
-	return X_lr, X_hr, np.array(Y)
+	return X_lr, X_hr, Y
 
 
 def getUnlabelledData(baseDir, imagePaths, batch_size=32):

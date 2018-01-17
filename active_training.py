@@ -48,6 +48,15 @@ def lr_preprocess(X):
 	return X / 255.0
 
 
+
+def calculate_accuracy(Y_pred, Y_labels, mapping):
+	score = 0.0
+	for i in range(len(Y_pred)):
+		if Y_pred[i] == mapping[Y_labels[i]]:
+			score += 1.0
+	return score / len(Y_pred)
+
+
 if __name__ == "__main__":
 
 	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(IMAGESDIR, TESTDATALIST, HIGHRES, LOWRES)
@@ -58,18 +67,22 @@ if __name__ == "__main__":
 	lowgenTrain, lowgenVal = load_data.returnGenerators(LOWRESIMAGESDIR + "/train", LOWRESIMAGESDIR + "/val", LOWRES, 16, lr_preprocess)
 	highgenTrain, highgenVal = load_data.returnGenerators(HIGHRESIMAGESDIR + "/train", HIGHRESIMAGESDIR + "/val", HIGHRES, 16, hr_preprocess)
 
+	# Get mappings from classnames to softmax indices
+	lowMap = lowgenVal.class_indices
+	highMap = highgenVal.class_indices
+
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 1)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 3)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 1)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 5)
 	print('Finetuned low resolution model')
 
 	# Ready committee of models
@@ -86,9 +99,6 @@ if __name__ == "__main__":
 		batch_x, batch_y = unlabelledImagesGenerator.next()
 		batch_x_hr = load_data.resize(batch_x, HIGHRES)
 		batch_x_lr = load_data.resize(batch_x, LOWRES)
-
-		if i > 1000:
-			break
 
 		if batch_x_hr.shape[0] == 0:
 			break
@@ -137,11 +147,12 @@ if __name__ == "__main__":
 			train_lr_y = np.array([])
 			print "Trained low-res model again!"
 
-		# Print count of images queried so far
-		print("Active Count:", ACTIVE_COUNT)
-
+	# Print count of images queried so far
+	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
 	lowresPreds = np.argmax(lowResModel.predict(X_test_lr), axis=1)
 	highresPreds = np.argmax(bag.predict(X_test_hr), axis=1)
-	numAgree = np.sum((lowresPreds == highresPreds) * 1.0)
+	numAgree = int(np.sum((lowresPreds == highresPreds) * 1.0))
 	print(numAgree, 'out of', len(lowresPreds), 'agree')
+	print('Low-res model test accuracy:', calculate_accuracy(lowresPreds, Y_test, lowMap))
+	print('High-res model test accuracy:', calculate_accuracy(highresPreds, Y_test, highMap))
