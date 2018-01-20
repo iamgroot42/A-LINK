@@ -59,9 +59,10 @@ def calculate_accuracy(Y_pred, Y_labels, mapping):
 def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 	score = 0.0
 	for i in range(len(Y_pred)):
-		mapped_classes = [mapping[x] for x in np.argsort(Y_pred)]
-		if Y_pred[i] in mapped_classes[:N]:
-			score += 1.0
+		sorted_preds = np.argsort(-Y_pred[i])
+		for j in range(N):
+			if mapping[Y_labels[i]] == sorted_preds[j]:
+				score += 1.0
 	return score / len(Y_pred)
 
 
