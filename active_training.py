@@ -48,11 +48,19 @@ def lr_preprocess(X):
 	return X / 255.0
 
 
-
 def calculate_accuracy(Y_pred, Y_labels, mapping):
 	score = 0.0
 	for i in range(len(Y_pred)):
 		if Y_pred[i] == mapping[Y_labels[i]]:
+			score += 1.0
+	return score / len(Y_pred)
+
+
+def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
+	score = 0.0
+	for i in range(len(Y_pred)):
+		mapped_classes = [mapping[x] for x in np.argsort(Y_pred)]
+		if Y_pred[i] in mapped_classes[:N]:
 			score += 1.0
 	return score / len(Y_pred)
 
@@ -82,7 +90,7 @@ if __name__ == "__main__":
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 5)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 50)
 	print('Finetuned low resolution model')
 
 	# Ready committee of models
@@ -92,16 +100,18 @@ if __name__ == "__main__":
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
-	BATCH_SEND = 16
+	BATCH_SEND = 32
 	UN_SIZE = 25117
 
 	for i in range(0, UN_SIZE, BATCH_SIZE):
-		batch_x, batch_y = unlabelledImagesGenerator.next()
+
+		try:
+			batch_x, batch_y = unlabelledImagesGenerator.next()
+		except:
+			break
+
 		batch_x_hr = load_data.resize(batch_x, HIGHRES)
 		batch_x_lr = load_data.resize(batch_x, LOWRES)
-
-		if batch_x_hr.shape[0] == 0:
-			break
 
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_hr)
@@ -145,14 +155,22 @@ if __name__ == "__main__":
 			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
-			print "Trained low-res model again!"
 
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
-	lowresPreds = np.argmax(lowResModel.predict(X_test_lr), axis=1)
-	highresPreds = np.argmax(bag.predict(X_test_hr), axis=1)
-	numAgree = int(np.sum((lowresPreds == highresPreds) * 1.0))
+	lowresPreds = lowResModel.predict(X_test_lr)
+	highresPreds = bag.predict(X_test_hr)
+	numAgree = int(np.sum((np.argmax(lowresPreds,axis=1) == np.argmax(highresPreds,axis=1)) * 1.0))
+
+	# Log accuracies
 	print(numAgree, 'out of', len(lowresPreds), 'agree')
-	print('Low-res model test accuracy:', calculate_accuracy(lowresPreds, Y_test, lowMap))
-	print('High-res model test accuracy:', calculate_accuracy(highresPreds, Y_test, highMap))
+	print('Low-res model test accuracy:', calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))
+	print('High-res model test accuracy:', calculate_accuracy(np.argmax(highresPreds,axis=1), Y_test, highMap))
+
+	# Log top-5 accuracies:
+	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
+	print('High-res model top-5 accuracy:', calculate_topNaccuracy(highresPreds, Y_test, highMap, 5))
+
+	# Save low-res model
+	lowResModel.model.save("low_res_model")
