@@ -1,4 +1,11 @@
+# For headless machines
+import matplotlib
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+
 import load_data
+import itertools
 import committee
 import model
 import noise
@@ -8,6 +15,8 @@ import tensorflow as tf
 import keras
 
 from keras_vggface import utils
+from sklearn.metrics import confusion_matrix
+
 
 # Global
 HIGHRES = (224, 224)
@@ -48,6 +57,13 @@ def lr_preprocess(X):
 	return X / 255.0
 
 
+def get_transformed_predictions(Y_true, mapping):
+	ret = []
+	for y in Y_true:
+		ret.append(mapping[y])
+	return np.array(ret)
+
+
 def calculate_accuracy(Y_pred, Y_labels, mapping):
 	score = 0.0
 	for i in range(len(Y_pred)):
@@ -64,6 +80,30 @@ def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 			if mapping[Y_labels[i]] == sorted_preds[j]:
 				score += 1.0
 	return score / len(Y_pred)
+
+
+def plot_confusion_matrix(cm, classes,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
 
 
 if __name__ == "__main__":
@@ -86,13 +126,18 @@ if __name__ == "__main__":
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 3)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 3, 0)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 50)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 50, 0)
 	print('Finetuned low resolution model')
+
+	# Calculate accuracy of low-res model at this stage
+	lowresPreds = lowResModel.predict(X_test_lr)
+	print('Low-res model test accuracy:', calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))	
+	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))	
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
@@ -153,7 +198,7 @@ if __name__ == "__main__":
 
 		if train_lr_x.shape[0] >= BATCH_SEND:
 			# Finetune low res model with this actively selected data points
-			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16)
+			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
 
@@ -175,3 +220,13 @@ if __name__ == "__main__":
 
 	# Save low-res model
 	lowResModel.model.save("low_res_model")
+
+	# Confusion matrices
+        lr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
+        hr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
+        plt.figure()
+        plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
+        plt.savefig('low_res_confmat.png')
+        plt.figure()
+        plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
+        plt.savefig('high_res_confmat.png')

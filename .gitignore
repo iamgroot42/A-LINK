@@ -1,5 +1,8 @@
+*.png
+
 # Data, Model files
 data*/*
+*_split/*
 models/*
 LOG*
 *.npy

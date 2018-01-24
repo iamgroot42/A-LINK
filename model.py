@@ -21,8 +21,8 @@ class CustomModel:
 		# Pre-process input
 		pass
 
-	def finetune(self, X, Y, epochs, batch_size):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2)
+	def finetune(self, X, Y, epochs, batch_size, verbose=1):
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose)
 
 	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs):
 		self.model.fit_generator(
