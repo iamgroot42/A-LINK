@@ -24,11 +24,12 @@ class CustomModel:
 	def finetune(self, X, Y, epochs, batch_size, verbose=1):
 		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose)
 
-	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs):
+	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs, verbose=1):
 		self.model.fit_generator(
         	trainGen,
         	steps_per_epoch=steps_epoch // batch_size,
         	epochs=epochs,
+		verbose=verbose,
         	validation_data=valGen,
         	validation_steps=800 // batch_size)
 

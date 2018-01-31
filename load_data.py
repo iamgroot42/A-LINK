@@ -63,7 +63,7 @@ def getUnlabelledData(baseDir, imagePaths, batch_size=32):
 				properPath = os.path.join(baseDir, path.rstrip('\n'))
 				image = np.asarray(Image.open(properPath), dtype="int32")
 				X.append(image)
-				Y.append(int(path.split('_')[0])-1)
+				Y.append(path.split('_')[0])
 				i += 1
 				if i ==  batch_size:
 					yield np.array(X), np.array(Y)

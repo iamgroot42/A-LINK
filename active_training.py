@@ -27,6 +27,7 @@ BIGRATIO = 0.5
 N_CLASSES = 337
 BATCH_SIZE = 16
 ACTIVE_COUNT = 0
+MIX_RATIO = 0.5
 
 # Image directories
 IMAGESDIR = "data/" # Path to all images
@@ -119,6 +120,8 @@ if __name__ == "__main__":
 	# Get mappings from classnames to softmax indices
 	lowMap = lowgenVal.class_indices
 	highMap = highgenVal.class_indices
+	lowMapinv = {v: k for k, v in lowMap.iteritems()}
+        highMapinv = {v: k for k, v in highMap.iteritems()}
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
@@ -131,7 +134,7 @@ if __name__ == "__main__":
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 50, 0)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 30, 0)
 	print('Finetuned low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
@@ -172,13 +175,13 @@ if __name__ == "__main__":
 		misclassifiedIndices = []
 
 		for j in range(len(lowResPredictions)):
-			if np.argmax(lowResPredictions[j]) != np.argmax(ensemblePredictions[j]):
+			if lowMapinv[np.argmax(lowResPredictions[j])] != highMapinv[np.argmax(ensemblePredictions[j])]:
 				misclassifiedIndices.append(j)
 
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if np.argmax(ensemblePredictions[j]) == batch_y[j]:
+			if np.argmax(ensemblePredictions[j]) == highMap[batch_y[j]]:
 				queryIndices.append(j)
 
 		# If nothing matches, proceed to next set of predictions
@@ -188,13 +191,19 @@ if __name__ == "__main__":
 		# Update count of queries to oracle
 		ACTIVE_COUNT += len(queryIndices)
 
+		# Convert class mappings (high/res)
+		intermediate = []
+		for qi in queryIndices:
+			intermediate.append(lowMap[highMapinv[np.argmax(ensemblePredictions[qi])]])
+		intermediate = np.array(intermediate)
+		
 		# Gather data to be sent to low res model for training
 		if train_lr_x.shape[0] > 0:
 			train_lr_x = np.concatenate((train_lr_x, noisy_data[queryIndices]))
-			train_lr_y = np.concatenate((train_lr_y, one_hot(np.argmax(ensemblePredictions[queryIndices], axis=1))))
+			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 		else:
 			train_lr_x = noisy_data[queryIndices]
-			train_lr_y = one_hot(np.argmax(ensemblePredictions[queryIndices], axis=1))
+			train_lr_y = one_hot(intermediate)
 
 		if train_lr_x.shape[0] >= BATCH_SEND:
 			# Finetune low res model with this actively selected data points
