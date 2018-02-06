@@ -12,35 +12,40 @@ import noise
 
 import numpy as np
 import tensorflow as tf
+
 import keras
 
 from keras_vggface import utils
+from tensorflow.python.platform import flags
 from sklearn.metrics import confusion_matrix
 
-
-# Global
-HIGHRES = (224, 224)
-DATARES = (50, 50)
-LOWRES = (32, 32)
-POOLRATIO = 0.6
-BIGRATIO = 0.5
-N_CLASSES = 337
-BATCH_SIZE = 16
-ACTIVE_COUNT = 0
-MIX_RATIO = 0.5
-
-# Image directories
-IMAGESDIR = "data/" # Path to all images
-LOWRESIMAGESDIR = "data_final/lowres" # Path to low-res images
-HIGHRESIMAGESDIR = "data_final/highres"# Path to high-res images
-UNLABALLEDLIST = "fileLists/unlabelledData.txt" # Path to unlabelled images list
-TESTDATALIST = "fileLists/testData.txt"  # Path to test images list
+# Set seed for reproducability
+tf.set_random_seed(42)
 
 # Don't hog GPU
 config = tf.ConfigProto()
 config.gpu_options.allow_growth=True
 sess = tf.Session(config=config)
 keras.backend.set_session(sess)
+
+# Global
+HIGHRES = (224, 224)
+DATARES = (150, 150)
+LOWRES = (32, 32)
+N_CLASSES = 337
+ACTIVE_COUNT = 0
+
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string('imagesDir', 'data/', 'Path to all images')
+flags.DEFINE_string('lowResImagesDir', 'data_final/lowres', 'Path to low-res images')
+flags.DEFINE_string('highResImagesDir', 'data/', 'Path to high-res images')
+flags.DEFINE_string('unlabelledList', 'fileLists/unlabelledData.txt', 'Path to unlabelled images list')
+flags.DEFINE_string('testDataList', 'fileLists/testData.txt', 'Path to test images list')
+flags.DEFINE_integer('batch_size', 16, 'Batch sie while sampling from unlabelled data')
+flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
+
 
 def one_hot(Y):
 	global N_CLASSES
@@ -109,13 +114,13 @@ def plot_confusion_matrix(cm, classes,
 
 if __name__ == "__main__":
 
-	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(IMAGESDIR, TESTDATALIST, HIGHRES, LOWRES)
+	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES)
 	print('Loaded test data')
 
-	unlabelledImagesGenerator = load_data.getUnlabelledData(IMAGESDIR, UNLABALLEDLIST, BATCH_SIZE)
+	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
 
-	lowgenTrain, lowgenVal = load_data.returnGenerators(LOWRESIMAGESDIR + "/train", LOWRESIMAGESDIR + "/val", LOWRES, 16, lr_preprocess)
-	highgenTrain, highgenVal = load_data.returnGenerators(HIGHRESIMAGESDIR + "/train", HIGHRESIMAGESDIR + "/val", HIGHRES, 16, hr_preprocess)
+	lowgenTrain, lowgenVal = load_data.returnGenerators(FLAGS.lowResImagesDir + "/train", FLAGS.lowResImagesDir + "/val", LOWRES, 16, lr_preprocess)
+	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "/train", FLAGS.highResImagesDir + "/val", HIGHRES, 16, hr_preprocess)
 
 	# Get mappings from classnames to softmax indices
 	lowMap = lowgenVal.class_indices
@@ -125,16 +130,17 @@ if __name__ == "__main__":
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 3, 0)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 20, 0)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 30, 0)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 60, 0)
 	print('Finetuned low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
@@ -149,10 +155,10 @@ if __name__ == "__main__":
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
-	BATCH_SEND = 32
+	BATCH_SEND = 64
 	UN_SIZE = 25117
 
-	for i in range(0, UN_SIZE, BATCH_SIZE):
+	for i in range(0, UN_SIZE, FLAGS.batch_size):
 
 		try:
 			batch_x, batch_y = unlabelledImagesGenerator.next()
@@ -207,9 +213,16 @@ if __name__ == "__main__":
 
 		if train_lr_x.shape[0] >= BATCH_SEND:
 			# Finetune low res model with this actively selected data points
+			# Also add unperterbed versions of these examples for relative information transfer
+			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
+			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
+
+		# Stop algorithm if limit reached/exceeded
+		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
+			break
 
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)

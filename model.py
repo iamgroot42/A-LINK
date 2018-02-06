@@ -6,6 +6,7 @@ from keras.layers import Conv2D, MaxPooling2D
 from keras_vggface.vggface import VGGFace
 from keras_vggface import utils
 from keras.optimizers import Adadelta, SGD, rmsprop
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 import numpy as np
 import cv2
@@ -22,7 +23,8 @@ class CustomModel:
 		pass
 
 	def finetune(self, X, Y, epochs, batch_size, verbose=1):
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose)
+		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])
 
 	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs, verbose=1):
 		self.model.fit_generator(
