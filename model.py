@@ -20,7 +20,7 @@ class CustomModel:
 
 	def preprocess(self, X):
 		# Pre-process input
-		pass
+		return X
 
 	def finetune(self, X, Y, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)

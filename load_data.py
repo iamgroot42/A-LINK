@@ -8,6 +8,7 @@ import os
 # Set seed for reproducability
 np.random.seed(42)
 
+# Generator for reading through directory
 def directoryGenerator(preprofunc = None):
 	datagen = ImageDataGenerator(
 	    	width_shift_range=0.15,
@@ -16,7 +17,7 @@ def directoryGenerator(preprofunc = None):
 	    	preprocessing_function=preprofunc)
 	return datagen
 
-
+# Get generators for train and val data
 def returnGenerators(train_dir, val_dir, imageSize, batchSize, preprofunc=None):
 	train_datagen = directoryGenerator(preprofunc)
 	train_generator = train_datagen.flow_from_directory(
@@ -30,7 +31,7 @@ def returnGenerators(train_dir, val_dir, imageSize, batchSize, preprofunc=None):
 	    	batch_size=batchSize)
 	return train_generator, validation_generator
 
-
+# Resize images
 def resize(images, new_size):
 	resized_images = []
 	for image in images:
@@ -39,7 +40,7 @@ def resize(images, new_size):
 	resized_images = resized_images.astype("float32")
 	return np.array(resized_images)
 
-
+# Load test data from memory
 def loadTestData(baseDir, imagePaths, highRes, lowRes):
 	X = []
 	Y = []
@@ -53,7 +54,7 @@ def loadTestData(baseDir, imagePaths, highRes, lowRes):
 	X_hr = resize(X, highRes)
 	return X_lr, X_hr, Y
 
-
+# Get generator for unlabelled data
 def getUnlabelledData(baseDir, imagePaths, batch_size=32):
 		i = 0
 		X = []

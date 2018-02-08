@@ -35,7 +35,6 @@ LOWRES = (32, 32)
 N_CLASSES = 337
 ACTIVE_COUNT = 0
 
-
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('imagesDir', 'data/', 'Path to all images')
@@ -49,30 +48,30 @@ flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning high
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning low-resolution model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 
-
+# Convert numeric-labels to one-hot representation
 def one_hot(Y):
 	global N_CLASSES
 	y_ = np.zeros((len(Y), N_CLASSES))
 	y_[np.arange(len(Y)), Y] = 1
 	return y_
 
-
+# Preprocess data for passing to high-resolution model
 def hr_preprocess(X):
 	X_temp = np.copy(X)
 	return utils.preprocess_input(X_temp, version=1)
 
-
+# Preprocess data for passing to low-resolution model
 def lr_preprocess(X):
 	return X / 255.0
 
-
+# Map predictions in one class-labelling to another
 def get_transformed_predictions(Y_true, mapping):
 	ret = []
 	for y in Y_true:
 		ret.append(mapping[y])
 	return np.array(ret)
 
-
+# Calculate accuracy, given mappings between two class nomenclatures
 def calculate_accuracy(Y_pred, Y_labels, mapping):
 	score = 0.0
 	for i in range(len(Y_pred)):
@@ -80,7 +79,7 @@ def calculate_accuracy(Y_pred, Y_labels, mapping):
 			score += 1.0
 	return score / len(Y_pred)
 
-
+# Calculate top-N accuracy
 def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 	score = 0.0
 	for i in range(len(Y_pred)):
@@ -90,7 +89,7 @@ def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 				score += 1.0
 	return score / len(Y_pred)
 
-
+# Plot confusion matrix
 def plot_confusion_matrix(cm, classes,
                           title='Confusion matrix',
                           cmap=plt.cm.Blues):
@@ -129,14 +128,14 @@ if __name__ == "__main__":
 	lowMap = lowgenVal.class_indices
 	highMap = highgenVal.class_indices
 	lowMapinv = {v: k for k, v in lowMap.iteritems()}
-        highMapinv = {v: k for k, v in highMap.iteritems()}
+    highMapinv = {v: k for k, v in highMap.iteritems()}
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
 	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
-	# Finetune high-resolution models
+	# Finetune high-resolution model(s)
 	for individualModel in ensemble:
 		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 0)
 	print('Finetuned high-resolution models')
@@ -148,8 +147,8 @@ if __name__ == "__main__":
 
 	# Calculate accuracy of low-res model at this stage
 	lowresPreds = lowResModel.predict(X_test_lr)
-	print('Low-res model test accuracy:', calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))	
-	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))	
+	print('Low-res model test accuracy:', calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))
+	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
@@ -181,7 +180,6 @@ if __name__ == "__main__":
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
-
 		for j in range(len(lowResPredictions)):
 			if lowMapinv[np.argmax(lowResPredictions[j])] != highMapinv[np.argmax(ensemblePredictions[j])]:
 				misclassifiedIndices.append(j)
@@ -192,19 +190,19 @@ if __name__ == "__main__":
 			if np.argmax(ensemblePredictions[j]) == highMap[batch_y[j]]:
 				queryIndices.append(j)
 
+		# Update count of queries to oracle
+		ACTIVE_COUNT += len(queryIndices)
+
 		# If nothing matches, proceed to next set of predictions
 		if len(queryIndices) == 0:
 			continue
-
-		# Update count of queries to oracle
-		ACTIVE_COUNT += len(queryIndices)
 
 		# Convert class mappings (high/res)
 		intermediate = []
 		for qi in queryIndices:
 			intermediate.append(lowMap[highMapinv[np.argmax(ensemblePredictions[qi])]])
 		intermediate = np.array(intermediate)
-		
+
 		# Gather data to be sent to low res model for training
 		if train_lr_x.shape[0] > 0:
 			train_lr_x = np.concatenate((train_lr_x, noisy_data[queryIndices]))
@@ -215,7 +213,7 @@ if __name__ == "__main__":
 
 		if train_lr_x.shape[0] >= FLAGS.batch_send:
 			# Finetune low res model with this actively selected data points
-			# Also add unperterbed versions of these examples for relative information transfer
+			# Also add unperturbed versions of these examplesto avoid overfitting on noise
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16, 0)
@@ -242,15 +240,17 @@ if __name__ == "__main__":
 	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
 	print('High-res model top-5 accuracy:', calculate_topNaccuracy(highresPreds, Y_test, highMap, 5))
 
+	exit()
+
 	# Save low-res model
 	lowResModel.model.save("low_res_model")
 
 	# Confusion matrices
-        lr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
-        hr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
-        plt.figure()
-        plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
-        plt.savefig('low_res_confmat.png')
-        plt.figure()
-        plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
-        plt.savefig('high_res_confmat.png')
+    lr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
+    hr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
+    plt.figure()
+    plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
+    plt.savefig('low_res_confmat.png')
+    plt.figure()
+    plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
+    plt.savefig('high_res_confmat.png')
