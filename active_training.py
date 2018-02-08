@@ -39,11 +39,14 @@ ACTIVE_COUNT = 0
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('imagesDir', 'data/', 'Path to all images')
-flags.DEFINE_string('lowResImagesDir', 'data_final/lowres', 'Path to low-res images')
-flags.DEFINE_string('highResImagesDir', 'data/', 'Path to high-res images')
+flags.DEFINE_string('lowResImagesDir', 'data_final/lowres/', 'Path to low-res images')
+flags.DEFINE_string('highResImagesDir', 'data_final/highres/', 'Path to high-res images')
 flags.DEFINE_string('unlabelledList', 'fileLists/unlabelledData.txt', 'Path to unlabelled images list')
 flags.DEFINE_string('testDataList', 'fileLists/testData.txt', 'Path to test images list')
-flags.DEFINE_integer('batch_size', 16, 'Batch sie while sampling from unlabelled data')
+flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
+flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training low resolution model')
+flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning high resolution model')
+flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning low-resolution model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 
 
@@ -119,8 +122,8 @@ if __name__ == "__main__":
 
 	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
 
-	lowgenTrain, lowgenVal = load_data.returnGenerators(FLAGS.lowResImagesDir + "/train", FLAGS.lowResImagesDir + "/val", LOWRES, 16, lr_preprocess)
-	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "/train", FLAGS.highResImagesDir + "/val", HIGHRES, 16, hr_preprocess)
+	lowgenTrain, lowgenVal = load_data.returnGenerators(FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES, 16, lr_preprocess)
+	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "train", FLAGS.highResImagesDir + "val", HIGHRES, 16, hr_preprocess)
 
 	# Get mappings from classnames to softmax indices
 	lowMap = lowgenVal.class_indices
@@ -135,12 +138,12 @@ if __name__ == "__main__":
 
 	# Finetune high-resolution models
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, 20, 0)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 0)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, 60, 0)
+	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, FLAGS.low_epochs, 0)
 	print('Finetuned low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
@@ -155,7 +158,6 @@ if __name__ == "__main__":
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
-	BATCH_SEND = 64
 	UN_SIZE = 25117
 
 	for i in range(0, UN_SIZE, FLAGS.batch_size):
@@ -211,7 +213,7 @@ if __name__ == "__main__":
 			train_lr_x = noisy_data[queryIndices]
 			train_lr_y = one_hot(intermediate)
 
-		if train_lr_x.shape[0] >= BATCH_SEND:
+		if train_lr_x.shape[0] >= FLAGS.batch_send:
 			# Finetune low res model with this actively selected data points
 			# Also add unperterbed versions of these examples for relative information transfer
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
