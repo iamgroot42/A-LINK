@@ -137,3 +137,10 @@ class SmallRes(CustomModel, object):
 
 	def predict(self, X):
 		return self.model.predict(self.preprocess(X))
+
+	def finetuneDenseOnly(self, X, Y):
+		for layer in self.model.layers:
+			if "dense" not in layers:
+				layer.trainable = False
+		self.model.compile(loss=categorical_crossentropy,
+                        optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])

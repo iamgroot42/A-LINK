@@ -128,7 +128,7 @@ if __name__ == "__main__":
 	lowMap = lowgenVal.class_indices
 	highMap = highgenVal.class_indices
 	lowMapinv = {v: k for k, v in lowMap.iteritems()}
-    highMapinv = {v: k for k, v in highMap.iteritems()}
+	highMapinv = {v: k for k, v in highMap.iteritems()}
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
@@ -141,7 +141,6 @@ if __name__ == "__main__":
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
-	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
 	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, FLAGS.low_epochs, 0)
 	print('Finetuned low resolution model')
 
@@ -176,7 +175,7 @@ if __name__ == "__main__":
 		noisy_data = bag.attackModel(batch_x_hr, LOWRES)
 
 		# Pass these to low res model, get predictions
-		lowResPredictions = lowresModel.predict(noisy_data)
+		lowResPredictions = lowResModel.predict(noisy_data)
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
@@ -216,9 +215,14 @@ if __name__ == "__main__":
 			# Also add unperturbed versions of these examplesto avoid overfitting on noise
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
-			lowResModel.finetune(train_lr_x, train_lr_y, 1, 16, 0)
+			# Use a lower learning rate for finetuning
+			# lowresModel.model.optimizer.lr.assign(0.1)
+			lowResModel.finetuneDenseOnly(train_lr_x, train_lr_y, 1, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
+			# Log test accuracy (temp)
+			tempPreds = lowResModel.predict(X_test_lr)
+			print('Test accuracy after this pass:', calculate_accuracy(np.argmax(tempPreds,axis=1), Y_test, lowMap))
 
 		# Stop algorithm if limit reached/exceeded
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
@@ -246,11 +250,11 @@ if __name__ == "__main__":
 	lowResModel.model.save("low_res_model")
 
 	# Confusion matrices
-    lr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
-    hr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
-    plt.figure()
-    plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
-    plt.savefig('low_res_confmat.png')
-    plt.figure()
-    plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
-    plt.savefig('high_res_confmat.png')
+	lr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
+	hr_cnf_matrix = confusion_matrix(get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
+	plt.figure()
+	plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
+	plt.savefig('low_res_confmat.png')
+	plt.figure()
+	plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
+	plt.savefig('high_res_confmat.png')
