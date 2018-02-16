@@ -135,6 +135,10 @@ if __name__ == "__main__":
 	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
+	# Ready committee of models
+	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
+	lowresModel = model.SmallRes(LOWRES, N_CLASSES)
+	
 	# Finetune high-resolution model(s)
 	for individualModel in ensemble:
 		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 0)
@@ -148,10 +152,6 @@ if __name__ == "__main__":
 	lowresPreds = lowResModel.predict(X_test_lr)
 	print('Low-res model test accuracy:', calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))
 	print('Low-res model top-5 accuracy:', calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
-
-	# Ready committee of models
-	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
-	lowresModel = model.SmallRes(LOWRES, N_CLASSES)
 
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])
@@ -216,7 +216,6 @@ if __name__ == "__main__":
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 			# Use a lower learning rate for finetuning
-			# lowresModel.model.optimizer.lr.assign(0.1)
 			lowResModel.finetuneDenseOnly(train_lr_x, train_lr_y, 1, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
