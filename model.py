@@ -138,9 +138,12 @@ class SmallRes(CustomModel, object):
 	def predict(self, X):
 		return self.model.predict(self.preprocess(X))
 
-	def finetuneDenseOnly(self, X, Y):
-		for layer in self.model.layers:
-			if "dense" not in layers:
-				layer.trainable = False
-		self.model.compile(loss=categorical_crossentropy,
-                        optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])
+	def finetuneDenseOnly(self, X, Y, epochs, batch_size, verbose=1):
+		#for layer in self.model.layers:
+		#	if "dense" not in layer.name:
+		#		layer.trainable = False
+		#self.model.compile(loss=categorical_crossentropy,
+                #        optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])
+		
+                early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+                self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])

@@ -137,7 +137,7 @@ if __name__ == "__main__":
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
-	lowresModel = model.SmallRes(LOWRES, N_CLASSES)
+	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
 	
 	# Finetune high-resolution model(s)
 	for individualModel in ensemble:
@@ -157,6 +157,10 @@ if __name__ == "__main__":
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
 	UN_SIZE = 25117
+
+	# Cumulative data (don't forget old data)
+	cumu_x = np.array([])
+	cumu_y = np.array([])
 
 	for i in range(0, UN_SIZE, FLAGS.batch_size):
 
@@ -207,8 +211,8 @@ if __name__ == "__main__":
 			train_lr_x = np.concatenate((train_lr_x, noisy_data[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 		else:
-			train_lr_x = noisy_data[queryIndices]
-			train_lr_y = one_hot(intermediate)
+			train_lr_x = np.copy(noisy_data[queryIndices])
+			train_lr_y = np.copy(one_hot(intermediate))
 
 		if train_lr_x.shape[0] >= FLAGS.batch_send:
 			# Finetune low res model with this actively selected data points
@@ -216,7 +220,14 @@ if __name__ == "__main__":
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
 			# Use a lower learning rate for finetuning
-			lowResModel.finetuneDenseOnly(train_lr_x, train_lr_y, 1, 16, 0)
+			#lowResModel.finetuneDenseOnly(train_lr_x, train_lr_y, 1, 16, 0)
+			if cumu_x.shape[0] > 0:
+				cumu_x = np.concatenate((cumu_x, train_lr_x))
+				cumu_y = np.concatenate((cumu_y, train_lr_y))
+			else:
+				cumu_x = np.copy(train_lr_x)
+				cumu_y = np.copy(train_lr_y)
+			lowResModel.finetuneDenseOnly(cumu_x, cumu_y, 1, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
 			# Log test accuracy (temp)
