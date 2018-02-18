@@ -2,7 +2,7 @@ import numpy as np
 from PIL import Image
 from scipy.misc import imresize
 from keras.preprocessing.image import ImageDataGenerator
-
+from keras.utils import np_utils
 import os
 
 # Set seed for reproducability
@@ -53,6 +53,28 @@ def loadTestData(baseDir, imagePaths, highRes, lowRes):
 	X_lr = resize(X, lowRes)
 	X_hr = resize(X, highRes)
 	return X_lr, X_hr, Y
+
+# Load data from memory, resized into desired shape
+def resizedLoadData(baseDir, imagePaths, desiredRes):
+	X = []
+	Y = []
+	with open(imagePaths, 'r') as f:
+		for path in f:
+			properPath = os.path.join(baseDir, path.rstrip('\n'))
+			image = np.asarray(Image.open(properPath), dtype="int32")
+			X.append(imresize(image, desiredRes))
+			Y.apend(path.split('_')[0])
+	return np.array(X).astype('float32'), Y
+
+# Load train, val data from folders
+def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
+	X_train, Y_train = resizedLoadData(baseDir, trainImagePaths, desiredRes)
+	X_val, Y_val = resizedLoadData(baseDir, valImagePaths, desiredRes)
+	uniqueClasses = list(set(Y_train))
+	classMapping = {y:x-1 for x,y in enumerate(uniqueClasses)}
+	Y_train = np_utils.to_categorical([classMapping[x] for x in Y_train], len(uniqueClasses))
+	Y_val = np_utils.to_categorical([classMapping[x] for x in Y_val], len(uniqueClasses))
+	return (X_train, Y_train), (X_val, Y_val), classMapping
 
 # Get generator for unlabelled data
 def getUnlabelledData(baseDir, imagePaths, batch_size=32):

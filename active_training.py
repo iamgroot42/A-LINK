@@ -119,16 +119,19 @@ if __name__ == "__main__":
 	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES)
 	print('Loaded test data')
 
+	# Initialize generator for unlabelled data
 	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
 
-	lowgenTrain, lowgenVal = load_data.returnGenerators(FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES, 16, lr_preprocess)
+	# Initialize generator for high-resolution data
 	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "train", FLAGS.highResImagesDir + "val", HIGHRES, 16, hr_preprocess)
-
+	
+	# Load low-resolution data
+	(X_low_train, Y_low_train), (X_low_val, Y_low_val), lowMap = load_data.resizeLoadDataAll(FLAGS.imagesDir, FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES) 
+	
 	# Get mappings from classnames to softmax indices
-	lowMap = lowgenVal.class_indices
 	highMap = highgenVal.class_indices
-	lowMapinv = {v: k for k, v in lowMap.iteritems()}
 	highMapinv = {v: k for k, v in highMap.iteritems()}
+	lowMapinv =  {v: k for k, v in lowMap.iteritems()}
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
@@ -145,8 +148,8 @@ if __name__ == "__main__":
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
-	lowResModel.finetuneGenerator(lowgenTrain, lowgenVal, 2000, 16, FLAGS.low_epochs, 0)
-	print('Finetuned low resolution model')
+	lowresModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 0)
+	print('Trained low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
 	lowresPreds = lowResModel.predict(X_test_lr)
@@ -159,8 +162,8 @@ if __name__ == "__main__":
 	UN_SIZE = 25117
 
 	# Cumulative data (don't forget old data)
-	cumu_x = np.array([])
-	cumu_y = np.array([])
+	cumu_x = X_low_train
+	cumu_y = Y_low_train
 
 	for i in range(0, UN_SIZE, FLAGS.batch_size):
 
@@ -219,18 +222,13 @@ if __name__ == "__main__":
 			# Also add unperturbed versions of these examplesto avoid overfitting on noise
 			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, one_hot(intermediate)))
-			# Use a lower learning rate for finetuning
-			#lowResModel.finetuneDenseOnly(train_lr_x, train_lr_y, 1, 16, 0)
-			if cumu_x.shape[0] > 0:
-				cumu_x = np.concatenate((cumu_x, train_lr_x))
-				cumu_y = np.concatenate((cumu_y, train_lr_y))
-			else:
-				cumu_x = np.copy(train_lr_x)
-				cumu_y = np.copy(train_lr_y)
-			lowResModel.finetuneDenseOnly(cumu_x, cumu_y, 1, 16, 0)
+			# Use a lower learning rate for finetuning (accumulate data as a countermeasure against catastrophic forgetting)
+			cumu_x = np.concatenate((cumu_x, train_lr_x))
+			cumu_y = np.concatenate((cumu_y, train_lr_y))
+			lowResModel.finetuneDenseOnly(cumu_x, cumu_y, 3, 16, 0)
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
-			# Log test accuracy (temp)
+			# Log test accuracy
 			tempPreds = lowResModel.predict(X_test_lr)
 			print('Test accuracy after this pass:', calculate_accuracy(np.argmax(tempPreds,axis=1), Y_test, lowMap))
 
@@ -241,6 +239,7 @@ if __name__ == "__main__":
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
+	# Calculate performance  metrics
 	lowresPreds = lowResModel.predict(X_test_lr)
 	highresPreds = bag.predict(X_test_hr)
 	numAgree = int(np.sum((np.argmax(lowresPreds,axis=1) == np.argmax(highresPreds,axis=1)) * 1.0))
