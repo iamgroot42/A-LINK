@@ -127,7 +127,7 @@ if __name__ == "__main__":
 	
 	# Load low-resolution data
 	(X_low_train, Y_low_train), (X_low_val, Y_low_val), lowMap = load_data.resizeLoadDataAll(FLAGS.imagesDir, FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES) 
-	
+
 	# Get mappings from classnames to softmax indices
 	highMap = highgenVal.class_indices
 	highMapinv = {v: k for k, v in highMap.iteritems()}
@@ -148,7 +148,7 @@ if __name__ == "__main__":
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
-	lowresModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 0)
+	lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 0)
 	print('Trained low resolution model')
 
 	# Calculate accuracy of low-res model at this stage

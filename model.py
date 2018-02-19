@@ -28,7 +28,7 @@ class CustomModel:
 
 	def trainModel(self, X_train, Y_train, X_val, Y_val, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-		self.model.fit(self.preprocess(X_train), Y, validation_data=(self.preprocess(X_val), Y_val) ,batch_size=batch_size, epochs=epochs, verbose=verbose, callbacks=[early_stop])
+		self.model.fit(self.preprocess(X_train), Y_train, validation_data=(self.preprocess(X_val), Y_val) ,batch_size=batch_size, epochs=epochs, verbose=verbose, callbacks=[early_stop])
 
 	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs, verbose=1):
 		self.model.fit_generator(
