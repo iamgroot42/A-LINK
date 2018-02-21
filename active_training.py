@@ -144,11 +144,11 @@ if __name__ == "__main__":
 	
 	# Finetune high-resolution model(s)
 	for individualModel in ensemble:
-		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 0)
+		individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 1)
 	print('Finetuned high-resolution models')
 
 	# Train low-resolution model
-	lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 0)
+	lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 1)
 	print('Trained low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
@@ -165,7 +165,8 @@ if __name__ == "__main__":
 	cumu_x = X_low_train
 	cumu_y = Y_low_train
 
-	for i in range(0, UN_SIZE, FLAGS.batch_size):
+	#for i in range(0, UN_SIZE, FLAGS.batch_size):
+	for i in range(0, 0, FLAGS.batch_size):
 
 		try:
 			batch_x, batch_y = unlabelledImagesGenerator.next()
@@ -242,7 +243,11 @@ if __name__ == "__main__":
 	# Calculate performance  metrics
 	lowresPreds = lowResModel.predict(X_test_lr)
 	highresPreds = bag.predict(X_test_hr)
-	numAgree = int(np.sum((np.argmax(lowresPreds,axis=1) == np.argmax(highresPreds,axis=1)) * 1.0))
+	numAgree = 0
+	for i in range(len(lowresPreds)):
+		print lowMapinv[np.argmax(lowresPreds[i])], highMapinv[np.argmax(highresPreds[i])], Y_test[i]
+		if lowMapinv[np.argmax(lowresPreds[i])] == highMapinv[np.argmax(highresPreds[i])]:
+			numAgree += 1
 
 	# Log accuracies
 	print(numAgree, 'out of', len(lowresPreds), 'agree')

@@ -65,7 +65,7 @@ def resizedLoadData(baseDir, imagesFolder, desiredRes):
 			image = np.asarray(Image.open(properPath), dtype="int32")
 			X.append(imresize(image, desiredRes))
 			Y.append(path.split('_')[0])
-	return np.array(X).astype('float32'), Y
+	return np.array(X), Y
 
 # Load train, val data from folders
 def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
