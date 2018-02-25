@@ -1,6 +1,8 @@
 *.png
 *_model
 
+DFW/*
+
 # Data, Model files
 data*/*
 *_split/*

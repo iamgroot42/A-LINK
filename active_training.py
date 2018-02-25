@@ -135,8 +135,8 @@ if __name__ == "__main__":
 
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
-	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
-	ensembleNoise = [noise.Noise() for _ in ensemble]
+	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
@@ -165,8 +165,7 @@ if __name__ == "__main__":
 	cumu_x = X_low_train
 	cumu_y = Y_low_train
 
-	#for i in range(0, UN_SIZE, FLAGS.batch_size):
-	for i in range(0, 0, FLAGS.batch_size):
+	for i in range(0, UN_SIZE, FLAGS.batch_size):
 
 		try:
 			batch_x, batch_y = unlabelledImagesGenerator.next()
@@ -245,7 +244,7 @@ if __name__ == "__main__":
 	highresPreds = bag.predict(X_test_hr)
 	numAgree = 0
 	for i in range(len(lowresPreds)):
-		print lowMapinv[np.argmax(lowresPreds[i])], highMapinv[np.argmax(highresPreds[i])], Y_test[i]
+		#print lowMapinv[np.argmax(lowresPreds[i])], highMapinv[np.argmax(highresPreds[i])], Y_test[i]
 		if lowMapinv[np.argmax(lowresPreds[i])] == highMapinv[np.argmax(highresPreds[i])]:
 			numAgree += 1
 
