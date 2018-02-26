@@ -22,7 +22,8 @@ class CustomModel:
 		try:
 			self.model = load_model(self.modelName)
 			return True
-		return False
+		except:
+			return False
 
 	def preprocess(self, X):
 		return X
@@ -40,7 +41,7 @@ class CustomModel:
 			trainGen,
 			steps_per_epoch=steps_epoch // batch_size,
 			epochs=epochs,
-		verbose=verbose,
+			verbose=verbose,
 			validation_data=valGen,
 			validation_steps=800 // batch_size)
 
@@ -101,7 +102,7 @@ class SENET50(CustomModel, object):
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)
-			return utils.preprocess_input(X_temp, version=2)
+		return utils.preprocess_input(X_temp, version=2)
 
 	def predict(self, X):
 		preds = self.model.predict(self.preprocess(X))

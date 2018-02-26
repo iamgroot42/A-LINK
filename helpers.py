@@ -2,6 +2,8 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
+from keras_vggface import utils
+
 
 # Plot confusion matrix
 def plot_confusion_matrix(cm, classes,title='Confusion matrix',cmap=plt.cm.Blues):
@@ -62,12 +64,13 @@ def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 
 # Calculate top N accuracy
 def calculate_accuracy(testGenerator, model, resType, mapping, N=5):
-	scores = [0.0 for _ in range(N)]
+	score = 0.0
 	count = 0
 	while True:
 		try:
 			X_low, X_high, Y = testGenerator.next()
-		except:
+		except Exception, e:
+			print e
 			break
 		if resType == "low":
 			Y_pred = model.predict(X_low)
@@ -77,6 +80,6 @@ def calculate_accuracy(testGenerator, model, resType, mapping, N=5):
 		for i in range(len(Y_pred)):
 			sorted_preds = np.argsort(-Y_pred[i])
 			for j in range(N):
-				if mapping[Y_labels[i]] == sorted_preds[j]:
+				if mapping[Y[i]] == sorted_preds[j]:
 					score += 1.0
 	return score / count

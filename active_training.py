@@ -45,10 +45,6 @@ flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled exampl
 
 
 if __name__ == "__main__":
-
-	X_test_lr, X_test_hr, Y_test = load_data.loadTestData(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES)
-	print('Loaded test data')
-
 	# Initialize generator for unlabelled data
 	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
 
@@ -72,15 +68,14 @@ if __name__ == "__main__":
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
 	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
 	
+	# Train low-resolution model
+        lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 1)
+        print('Trained low resolution model')
 	# Finetune high-resolution model(s), if not already trained
 	for individualModel in ensemble:
 		if not individualModel.maybeLoadFromMemory():
 			individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 1)
 	print('Finetuned high-resolution models')
-
-	# Train low-resolution model
-	lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 1)
-	print('Trained low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
 	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
@@ -168,15 +163,6 @@ if __name__ == "__main__":
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
-	# Calculate performance  metrics
-	lowresPreds = lowResModel.predict(X_test_lr)
-	highresPreds = bag.predict(X_test_hr)
-	numAgree = 0
-	for i in range(len(lowresPreds)):
-		if lowMapinv[np.argmax(lowresPreds[i])] == highMapinv[np.argmax(highresPreds[i])]:
-			numAgree += 1
-
 	# Log statistics
-	print(numAgree, 'out of', len(lowresPreds), 'agree')
 	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
 	print('High-res model test accuracy:', helpers.calculate_accuracy(testGen, bag, "high", highMap, 1))

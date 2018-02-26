@@ -9,8 +9,11 @@ import os
 np.random.seed(42)
 
 # Get count of test data
-def getContentsSize(imagePaths):
-	return len(os.listdir(imagePaths))
+def getContentsSize(imagesPath):
+	with open(imagesPath, 'r') as f:
+		for i, _ in enumerate(f):
+			pass
+	return i + 1
 
 # Generator for reading through directory
 def directoryGenerator(preprofunc = None):
@@ -59,7 +62,7 @@ def testDataGenerator(baseDir, imagePaths, highRes, lowRes, batch_size=128):
 				Y.append(path.split('_')[0])
 				i += 1
 				if i == batch_size:
-					yield np.array(X_low), np.array(X_high), np.array(Y)
+					yield np.array(X_low, dtype="float32"), np.array(X_high, dtype="float32"), np.array(Y)
 					i = 0
 					X_low = []
 					X_high = []
