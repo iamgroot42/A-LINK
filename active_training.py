@@ -83,21 +83,19 @@ if __name__ == "__main__":
 	print('Trained low resolution model')
 
 	# Calculate accuracy of low-res model at this stage
-	lowresPreds = lowResModel.predict(X_test_lr)
-	print('Low-res model test accuracy:', helpers.calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))
-	print('Low-res model top-5 accuracy:', helpers.calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
-
+	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
+	print('Low-res model test accuracy:', helpers.calculate_accuracy(testGen, lowResModel, "low", lowMap, 1))
+	
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])
 	train_lr_y = np.array([])
-	UN_SIZE = 25117
+	UN_SIZE = load_data.getContentsSize(FLAGS.testDataList)
 
 	# Cumulative data (don't forget old data)
 	cumu_x = X_low_train
 	cumu_y = Y_low_train
 
-	for i in range(0, UN_SIZE, FLAGS.batch_size):
-
+	while True:
 		try:
 			batch_x, batch_y = unlabelledImagesGenerator.next()
 		except:
@@ -160,8 +158,8 @@ if __name__ == "__main__":
 			train_lr_x = np.array([])
 			train_lr_y = np.array([])
 			# Log test accuracy
-			tempPreds = lowResModel.predict(X_test_lr)
-			print('Test accuracy after this pass:', calculate_accuracy(np.argmax(tempPreds,axis=1), Y_test, lowMap))
+			testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
+			print('Test accuracy after this pass:', helpers.calculate_accuracy(testGen, lowResModel, "low", lowMap, 1))
 
 		# Stop algorithm if limit reached/exceeded
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
@@ -175,27 +173,10 @@ if __name__ == "__main__":
 	highresPreds = bag.predict(X_test_hr)
 	numAgree = 0
 	for i in range(len(lowresPreds)):
-		#print lowMapinv[np.argmax(lowresPreds[i])], highMapinv[np.argmax(highresPreds[i])], Y_test[i]
 		if lowMapinv[np.argmax(lowresPreds[i])] == highMapinv[np.argmax(highresPreds[i])]:
 			numAgree += 1
 
-	# Log accuracies
+	# Log statistics
 	print(numAgree, 'out of', len(lowresPreds), 'agree')
-	print('Low-res model test accuracy:', helpers.calculate_accuracy(np.argmax(lowresPreds,axis=1), Y_test, lowMap))
-	print('High-res model test accuracy:', helpers.calculate_accuracy(np.argmax(highresPreds,axis=1), Y_test, highMap))
-
-	# Log top-5 accuracies:
-	print('Low-res model top-5 accuracy:', helpers.calculate_topNaccuracy(lowresPreds, Y_test, lowMap, 5))
-	print('High-res model top-5 accuracy:', helpers.calculate_topNaccuracy(highresPreds, Y_test, highMap, 5))
-
-	exit()
-
-	# Confusion matrices
-	lr_cnf_matrix = confusion_matrix(helpers.get_transformed_predictions(Y_test, lowMap), np.argmax(lowresPreds, axis=1))
-	hr_cnf_matrix = confusion_matrix(helpers.get_transformed_predictions(Y_test, highMap), np.argmax(highresPreds, axis=1))
-	plt.figure()
-	helpers.plot_confusion_matrix(lr_cnf_matrix, classes=range(N_CLASSES), title='Low resolution model')
-	plt.savefig('low_res_confmat.png')
-	plt.figure()
-	helpers.plot_confusion_matrix(hr_cnf_matrix, classes=range(N_CLASSES), title='High resolution model')
-	plt.savefig('high_res_confmat.png')
+	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
+	print('High-res model test accuracy:', helpers.calculate_accuracy(testGen, bag, "high", highMap, 1))

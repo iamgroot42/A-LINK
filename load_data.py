@@ -8,6 +8,10 @@ import os
 # Set seed for reproducability
 np.random.seed(42)
 
+# Get count of test data
+def getContentsSize(imagePaths):
+	return len(os.listdir(imagePaths))
+
 # Generator for reading through directory
 def directoryGenerator(preprofunc = None):
 	datagen = ImageDataGenerator(
@@ -40,19 +44,26 @@ def resize(images, new_size):
 	resized_images = resized_images.astype("float32")
 	return np.array(resized_images)
 
-# Load test data from memory
-def loadTestData(baseDir, imagePaths, highRes, lowRes):
-	X = []
+# Test data generator
+def testDataGenerator(baseDir, imagePaths, highRes, lowRes, batch_size=128):
+	i = 0
+	X_low = []
+	X_high = []
 	Y = []
 	with open(imagePaths, 'r') as f:
 		for path in f:
-			properPath = os.path.join(baseDir, path.rstrip('\n'))
-			image = np.asarray(Image.open(properPath), dtype="int32")
-			X.append(image)
-			Y.append(path.split('_')[0])
-	X_lr = resize(X, lowRes)
-	X_hr = resize(X, highRes)
-	return X_lr, X_hr, Y
+				properPath = os.path.join(baseDir, path.rstrip('\n'))
+				image = np.asarray(Image.open(properPath), dtype="int32")
+				X_low.append(imresize(image, lowRes))
+				X_high.append(imresize(image, highRes))
+				Y.append(path.split('_')[0])
+				i += 1
+				if i == batch_size:
+					yield np.array(X_low), np.array(X_high), np.array(Y)
+					i = 0
+					X_low = []
+					X_high = []
+					Y = []
 
 # Load data from memory, resized into desired shape
 def resizedLoadData(baseDir, imagesFolder, desiredRes):
@@ -66,16 +77,6 @@ def resizedLoadData(baseDir, imagesFolder, desiredRes):
 			X.append(imresize(image, desiredRes))
 			Y.append(path.split('_')[0])
 	return np.array(X), Y
-
-# Load train, val data from folders
-def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
-	X_train, Y_train = resizedLoadData(baseDir, trainImagePaths, desiredRes)
-	X_val, Y_val = resizedLoadData(baseDir, valImagePaths, desiredRes)
-	uniqueClasses = list(set(Y_train))
-	classMapping = {y:x for x,y in enumerate(uniqueClasses)}
-	Y_train = np_utils.to_categorical([classMapping[x] for x in Y_train], len(uniqueClasses))
-	Y_val = np_utils.to_categorical([classMapping[x] for x in Y_val], len(uniqueClasses))
-	return (X_train, Y_train), (X_val, Y_val), classMapping
 
 # Get generator for unlabelled data
 def getUnlabelledData(baseDir, imagePaths, batch_size=32):
@@ -94,3 +95,13 @@ def getUnlabelledData(baseDir, imagePaths, batch_size=32):
 					i = 0
 					X = []
 					Y = []
+
+# Load train, val data from folders
+def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
+	X_train, Y_train = resizedLoadData(baseDir, trainImagePaths, desiredRes)
+	X_val, Y_val = resizedLoadData(baseDir, valImagePaths, desiredRes)
+	uniqueClasses = list(set(Y_train))
+	classMapping = {y:x for x,y in enumerate(uniqueClasses)}
+	Y_train = np_utils.to_categorical([classMapping[x] for x in Y_train], len(uniqueClasses))
+	Y_val = np_utils.to_categorical([classMapping[x] for x in Y_val], len(uniqueClasses))
+	return (X_train, Y_train), (X_val, Y_val), classMapping

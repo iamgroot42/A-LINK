@@ -59,3 +59,24 @@ def calculate_topNaccuracy(Y_pred, Y_labels, mapping, N=5):
 			if mapping[Y_labels[i]] == sorted_preds[j]:
 				score += 1.0
 	return score / len(Y_pred)
+
+# Calculate top N accuracy
+def calculate_accuracy(testGenerator, model, resType, mapping, N=5):
+	scores = [0.0 for _ in range(N)]
+	count = 0
+	while True:
+		try:
+			X_low, X_high, Y = testGenerator.next()
+		except:
+			break
+		if resType == "low":
+			Y_pred = model.predict(X_low)
+		else:
+			Y_pred = model.predict(X_high)
+		count += len(Y_pred)
+		for i in range(len(Y_pred)):
+			sorted_preds = np.argsort(-Y_pred[i])
+			for j in range(N):
+				if mapping[Y_labels[i]] == sorted_preds[j]:
+					score += 1.0
+	return score / count
