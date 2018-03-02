@@ -25,6 +25,9 @@ class CustomModel:
 		except:
 			return False
 
+	def save(self):
+		self.model.save(self.modelName)
+
 	def preprocess(self, X):
 		return X
 
