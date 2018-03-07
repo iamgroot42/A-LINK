@@ -1,4 +1,4 @@
-import load_data
+import readDFW
 import itertools
 import committee
 import model
@@ -24,108 +24,91 @@ sess = tf.Session(config=config)
 keras.backend.set_session(sess)
 
 # Global
-HIGHRES = (224, 224)
-DATARES = (150, 150)
-LOWRES = (32, 32)
-N_CLASSES = 337
+IMAGERES = (224, 224)
+N_CLASSES = None
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('imagesDir', 'data/', 'Path to all images')
-flags.DEFINE_string('lowResImagesDir', 'data_final/lowres/', 'Path to low-res images')
-flags.DEFINE_string('highResImagesDir', 'data_final/highres/', 'Path to high-res images')
-flags.DEFINE_string('unlabelledList', 'fileLists/unlabelledData.txt', 'Path to unlabelled images list')
-flags.DEFINE_string('testDataList', 'fileLists/testData.txt', 'Path to test images list')
+flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
+flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
+flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
-flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training low resolution model')
-flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning high resolution model')
-flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning low-resolution model')
+flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training disguised-faces model')
+flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
+flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 
 
 if __name__ == "__main__":
-	# Initialize generator for unlabelled data
-	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
-
-	# Initialize generator for high-resolution data
-	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "train", FLAGS.highResImagesDir + "val", HIGHRES, 16, helpers.hr_preprocess)
+	names, (X_plain, Y_plain), (X_val, Y_val), (X_dig, Y_dig) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 	
-	# Load low-resolution data
-	(X_low_train, Y_low_train), (X_low_val, Y_low_val), lowMap = load_data.resizeLoadDataAll(FLAGS.imagesDir, FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES) 
+	# Get mappings from names of people to softmax indices
+	indices = {names[i]:i for i in range(len(names))}
+	revIndices = {v: k for k, v in indices.iteritems()}
+	N_CLASSES = len(names)
 
-	# Get mappings from classnames to softmax indices
-	highMap = highgenVal.class_indices
-	highMapinv = {v: k for k, v in highMap.iteritems()}
-	lowMapinv =  {v: k for k, v in lowMap.iteritems()}
+	# Convert data to one-hot
+	Y_plain = helpers.names_to_onehot(Y_plain, indices)
+	Y_val = helpers.names_to_onehot(Y_val, indices)
+	Y_dig = helpers.names_to_onehot(Y_dig, indices)
 
-	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
-	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
-	#ensembleNoise = [noise.Noise() for _ in ensemble]
+	# Split available disguised data for training and finetuning
+        (X_dig_train, Y_dig_train), (X_dig_ft, Y_dig_ft) = helpers.unisonSplit(X_dig, Y_dig, 0.4)
+
+	#ensemble = [model.FaceVGG16(IMAGERES, N_CLASSES, 512), model.RESNET50(IMAGERES, N_CLASSES)]
+	ensemble = [model.RESNET50(IMAGERES, N_CLASSES)]
+	# ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
-	lowResModel = model.SmallRes(LOWRES, N_CLASSES)
+	disguisedFacesModel = model.RESNET50(IMAGERES, N_CLASSES)
 	
-	# Train low-resolution model
-	if not lowResModel.maybeLoadFromMemory():
-	        lowResModel.trainModel(X_low_train, Y_low_train, X_low_val, Y_low_val, FLAGS.low_epochs, 16, 1)
-        	print('Trained low resolution model')
-		lowResModel.save()
-	else:
-		print("Loaded", lowResModel.modelName, "from memory")
+	# Finetune disguised-faces model
+	disguisedFacesModel.trainWithoutVal(X_dig_train, Y_dig_train, FLAGS.low_epochs, 16, 1)
+	print('Finetuned disguised-faces model')
 
-	# Finetune high-resolution model(s), if not already trained
+	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
 		if not individualModel.maybeLoadFromMemory():
-			individualModel.finetuneGenerator(highgenTrain, highgenVal, 2000, 16, FLAGS.high_epochs, 1)
-			individualModel.save()
-		else:
-			print("Loaded", individualModel.modelName, "from memory")
-	print('Finetuned high-resolution models')
+			individualModel.trainWithoutVal(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
+	print('Finetuned undisguised-faces models')
 
-	# Calculate accuracy of low-res model at this stage
-	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
-	print('Low-res model test accuracy:', helpers.calculate_accuracy(testGen, lowResModel, "low", lowMap, 1))
-	
-	# Train low res model only when batch length crosses threshold
-	train_lr_x = np.array([])
-	train_lr_y = np.array([])
-	UN_SIZE = load_data.getContentsSize(FLAGS.testDataList)
+	# Calculate accuracy of disguised-faces model at this stage
+	print('Disguised model test accuracy:', disguisedFacesModel.model.evaluate(X_val, Y_val))
+
+	# Train disguised-faces model only when batch length crosses threshold
+	train_df_x = np.array([])
+	train_df_y = np.array([])
+	UN_SIZE = len(X_dig_ft)
 
 	# Cumulative data (don't forget old data)
-	cumu_x = X_low_train
-	cumu_y = Y_low_train
+	cumu_x = X_dig_train
+	cumu_y = Y_dig_train
 
-	while True:
-		try:
-			batch_x, batch_y = unlabelledImagesGenerator.next()
-		except:
-			break
-
-		batch_x_hr = load_data.resize(batch_x, HIGHRES)
-		batch_x_lr = load_data.resize(batch_x, LOWRES)
+	for ii in range(0, len(X_dig_ft), 16):
+		batch_x, batch_y = X_dig_ft[ii:ii + 16], Y_dig_ft[ii: ii + 16]
 
 		# Get predictions made by committee
-		ensemblePredictions = bag.predict(batch_x_hr)
+		ensemblePredictions = bag.predict(batch_x)
 
 		# Get images with added noise
-		noisy_data = bag.attackModel(batch_x_hr, LOWRES)
+		noisy_data = bag.attackModel(batch_x, IMAGERES)
 
 		# Pass these to low res model, get predictions
-		lowResPredictions = lowResModel.predict(noisy_data)
+		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
-		for j in range(len(lowResPredictions)):
-			if lowMapinv[np.argmax(lowResPredictions[j])] != highMapinv[np.argmax(ensemblePredictions[j])]:
+		for j in range(len(disguisedPredictions)):
+			if revIndices[np.argmax(disguisedPredictions[j])] != revIndices[np.argmax(ensemblePredictions[j])]:
 				misclassifiedIndices.append(j)
 
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if np.argmax(ensemblePredictions[j]) == highMap[batch_y[j]]:
+			if revIndices[np.argmax(ensemblePredictions[j])] == revIndices[np.argmax(batch_y[j])]:
 				queryIndices.append(j)
 
 		# Update count of queries to oracle
@@ -138,31 +121,30 @@ if __name__ == "__main__":
 		# Convert class mappings (high/res)
 		intermediate = []
 		for qi in queryIndices:
-			intermediate.append(lowMap[highMapinv[np.argmax(ensemblePredictions[qi])]])
+			intermediate.append(np.argmax(ensemblePredictions[qi]))
 		intermediate = np.array(intermediate)
 
 		# Gather data to be sent to low res model for training
-		if train_lr_x.shape[0] > 0:
-			train_lr_x = np.concatenate((train_lr_x, noisy_data[queryIndices]))
-			train_lr_y = np.concatenate((train_lr_y, helpers.one_hot(intermediate, N_CLASSES)))
+		if train_df_x.shape[0] > 0:
+			train_df_x = np.concatenate((train_df_x, noisy_data[queryIndices]))
+			train_df_y = np.concatenate((train_df_y, helpers.one_hot(intermediate, N_CLASSES)))
 		else:
-			train_lr_x = np.copy(noisy_data[queryIndices])
-			train_lr_y = np.copy(helpers.one_hot(intermediate, N_CLASSES))
+			train_df_x = np.copy(noisy_data[queryIndices])
+			train_df_y = np.copy(helpers.one_hot(intermediate, N_CLASSES))
 
-		if train_lr_x.shape[0] >= FLAGS.batch_send:
-			# Finetune low res model with this actively selected data points
-			# Also add unperturbed versions of these examplesto avoid overfitting on noise
-			train_lr_x = np.concatenate((train_lr_x, batch_x_lr[queryIndices]))
-			train_lr_y = np.concatenate((train_lr_y, helpers.one_hot(intermediate, N_CLASSES)))
+		if train_df_x.shape[0] >= FLAGS.batch_send:
+			# Finetune disguised-faces model with this actively selected data points
+			# Also add unperturbed versions of these examples to avoid overfitting on noise
+			train_df_x = np.concatenate((train_df_x, batch_x[queryIndices]))
+			train_df_y = np.concatenate((train_df_y, helpers.one_hot(intermediate, N_CLASSES)))
 			# Use a lower learning rate for finetuning (accumulate data as a countermeasure against catastrophic forgetting)
-			cumu_x = np.concatenate((cumu_x, train_lr_x))
-			cumu_y = np.concatenate((cumu_y, train_lr_y))
-			lowResModel.finetuneDenseOnly(cumu_x, cumu_y, 3, 16, 0)
-			train_lr_x = np.array([])
-			train_lr_y = np.array([])
+			cumu_x = np.concatenate((cumu_x, train_df_x))
+			cumu_y = np.concatenate((cumu_y, train_df_y))
+			disguisedFacesModel.finetuneDenseOnly(cumu_x, cumu_y, 3, 16, 0)
+			train_df_x = np.array([])
+			train_df_y = np.array([])
 			# Log test accuracy
-			testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
-			print('Test accuracy after this pass:', helpers.calculate_accuracy(testGen, lowResModel, "low", lowMap, 1))
+			print('Disguised model test accuracy (after this pass):', disguisedFacesModel.model.evaluate(X_val, Y_val))
 
 		# Stop algorithm if limit reached/exceeded
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
@@ -170,7 +152,3 @@ if __name__ == "__main__":
 
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
-
-	# Log statistics
-	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
-	print('High-res model test accuracy:', helpers.calculate_accuracy(testGen, bag, "high", highMap, 1))

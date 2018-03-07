@@ -39,6 +39,11 @@ class CustomModel:
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
 		self.model.fit(self.preprocess(X_train), Y_train, validation_data=(self.preprocess(X_val), Y_val) ,batch_size=batch_size, epochs=epochs, verbose=verbose, callbacks=[early_stop])
 
+	def trainWithoutVal(self, X, Y, epochs, batch_size, verbose=1):
+		modifiedX = self.preprocess(X)
+		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+		self.model.fit(modifiedX, Y, validation_split=0.2, batch_size=batch_size, epochs=epochs, verbose=verbose, callbacks=[early_stop])
+
 	def finetuneGenerator(self, trainGen, valGen, steps_epoch, batch_size, epochs, verbose=1):
 		self.model.fit_generator(
 			trainGen,

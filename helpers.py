@@ -32,6 +32,11 @@ def one_hot(Y, n_classes):
 	y_[np.arange(len(Y)), Y] = 1
 	return y_
 
+# Convert from classnames into one-hot
+def names_to_onehot(Y, mapping):
+	Y_ = [ mapping[x] for x in Y]
+	return one_hot(Y_, len(mapping))
+
 # Preprocess data for passing to high-resolution model
 def hr_preprocess(X):
 	X_temp = np.copy(X)
@@ -83,3 +88,12 @@ def calculate_accuracy(testGenerator, model, resType, mapping, N=5):
 				if mapping[Y[i]] == sorted_preds[j]:
 					score += 1.0
 	return score / count
+
+# Shuffle data and split (in unison) into two parts
+def unisonSplit(X, Y, leftRatio=0.4):
+	indices = np.random.permutation(len(X))
+	leftThreshold = int(len(X) * leftRatio)
+	X_left, Y_left = X[indices[:leftThreshold]], Y[indices[:leftThreshold]]
+	X_right, Y_right = X[indices[leftThreshold:]], Y[indices[leftThreshold:]]
+	return (X_left, Y_left), (X_right, Y_right)
+
