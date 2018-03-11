@@ -6,9 +6,11 @@ from keras_vggface.vggface import VGGFace
 from keras_vggface import utils
 from keras.optimizers import Adadelta, SGD, rmsprop
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from keras.preprocessing.image import ImageDataGenerator
 
 import numpy as np
 import cv2
+import helpers
 
 
 class CustomModel:
@@ -39,6 +41,27 @@ class CustomModel:
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
 		self.model.fit(self.preprocess(X_train), Y_train, validation_data=(self.preprocess(X_val), Y_val) ,batch_size=batch_size, epochs=epochs, verbose=verbose, callbacks=[early_stop])
 
+	def trainWithAugmentation(self, X, Y, epochs, batch_size, verbose=1):
+		(X_train, Y_train), (X_val, Y_val) = helpers.unisonSplit(X, Y, 0.8)
+		trainDatagen = ImageDataGenerator(rotation_range=10,
+			width_shift_range=0.1,
+			height_shift_range=0.1,
+			shear_range=10,
+			horizontal_flip=True,
+			preprocessing_function=self.preprocess)
+		trainDatagen.fit(X_train)
+		valDatagen = ImageDataGenerator(rotation_range=10,
+                        width_shift_range=0.1,
+                        height_shift_range=0.1,
+                        shear_range=10,
+                        horizontal_flip=True,
+                        preprocessing_function=self.preprocess)
+		valDatagen.fit(X_val)
+		self.model.fit_generator(trainDatagen.flow(X_train, Y_train, batch_size=batch_size),
+			validation_data=valDatagen.flow(X_val, Y_val, batch_size=batch_size),
+			validation_steps=len(X_val) / batch_size,
+			steps_per_epoch=len(X_train) / batch_size, epochs=epochs)
+
 	def trainWithoutVal(self, X, Y, epochs, batch_size, verbose=1):
 		modifiedX = self.preprocess(X)
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
@@ -55,6 +78,10 @@ class CustomModel:
 
 	def predict(self, X):
 		pass
+
+	def finetuneDenseOnly(self, X, Y, epochs, batch_size, verbose=1):
+                early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+                self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])
 
 
 class FaceVGG16(CustomModel, object):
@@ -151,6 +178,3 @@ class SmallRes(CustomModel, object):
 	def predict(self, X):
 		return self.model.predict(self.preprocess(X))
 
-	def finetuneDenseOnly(self, X, Y, epochs, batch_size, verbose=1):
-		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])

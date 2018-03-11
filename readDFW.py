@@ -7,17 +7,20 @@ import numpy as np
 
 def cropImages(prefix, dirPath, faceBoxes):
 	imagesBefore = os.listdir(os.path.join(prefix, dirPath))
+	i = 0
 	for imPath in imagesBefore:
 		try:
 			partialName = os.path.join(dirPath, imPath)
 			fullName = os.path.join(prefix, partialName)
-			img = Image.open(fullName)
+			img = Image.open(fullName).convert('RGB')
 			tx, h, w, by = faceBoxes[partialName]
 			img = img.crop((tx, h, w, by))
-			img.save(fullName)
+			#img.save(fullName)
 		except:
-			os.remove(fullName)
-			print("File I/O error")
+			#os.remove(fullName)
+			i += 1
+			#print("File I/O error")
+	return i
 
 
 def constructIndexMap(filePath):
@@ -31,8 +34,10 @@ def constructIndexMap(filePath):
 
 def cropAllFolders(prefix, trainFolder, boxMap):
 	allImages = os.path.join(prefix, trainFolder)
+	prob = 0
 	for person in os.listdir(allImages):
-		cropImages(prefix, os.path.join(trainFolder, person), boxMap)
+		prob += cropImages(prefix, os.path.join(trainFolder, person), boxMap)
+	print("Problem with", prob)
 
 
 def getAllTrainData(prefix, trainFolder, imageRes, imposter=False):
@@ -74,7 +79,7 @@ def getAllTrainData(prefix, trainFolder, imageRes, imposter=False):
 
 if __name__ == "__main__":
 	prefix = "DFW/DFW_Data/"
-	trainBoxesPath = prefix + "Testing_data_face_coordinate.txt"
+	trainBoxesPath = prefix + "Training_data_face_coordinate.txt"
 	boxMap = constructIndexMap(trainBoxesPath)
-	#cropAllFolders(prefix, "Testing_data", boxMap)
-	getAllTrainData(prefix, "Training_data")
+	cropAllFolders(prefix, "Training_data", boxMap)
+	#getAllTrainData(prefix, "Training_data")

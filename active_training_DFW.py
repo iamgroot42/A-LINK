@@ -66,17 +66,18 @@ if __name__ == "__main__":
 	disguisedFacesModel = model.RESNET50(IMAGERES, N_CLASSES)
 	
 	# Finetune disguised-faces model
-	disguisedFacesModel.trainWithoutVal(X_dig_train, Y_dig_train, FLAGS.low_epochs, 16, 1)
+	disguisedFacesModel.trainWithAugmentation(X_dig_train, Y_dig_train, FLAGS.low_epochs, 16, 1)
 	print('Finetuned disguised-faces model')
 
 	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
 		if not individualModel.maybeLoadFromMemory():
-			individualModel.trainWithoutVal(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
+			individualModel.trainWithAugmentation(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
+			#individualModel.trainWithoutVal(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
 	print('Finetuned undisguised-faces models')
 
 	# Calculate accuracy of disguised-faces model at this stage
-	print('Disguised model test accuracy:', disguisedFacesModel.model.evaluate(X_val, Y_val))
+	print('Disguised model test accuracy:', disguisedFacesModel.model.evaluate(X_val, Y_val)[1])
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_x = np.array([])
@@ -144,7 +145,7 @@ if __name__ == "__main__":
 			train_df_x = np.array([])
 			train_df_y = np.array([])
 			# Log test accuracy
-			print('Disguised model test accuracy (after this pass):', disguisedFacesModel.model.evaluate(X_val, Y_val))
+			print('Disguised model test accuracy (after this pass):', disguisedFacesModel.model.evaluate(X_val, Y_val)[1])
 
 		# Stop algorithm if limit reached/exceeded
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
