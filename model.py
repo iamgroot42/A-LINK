@@ -18,7 +18,6 @@ class CustomModel:
 		self.shape = shape + (3,)
 		self.out_dim = out_dim
 		self.modelName = modelName
-		pass
 
 	def maybeLoadFromMemory(self):
 		try:
@@ -51,11 +50,11 @@ class CustomModel:
 			preprocessing_function=self.preprocess)
 		trainDatagen.fit(X_train)
 		valDatagen = ImageDataGenerator(rotation_range=10,
-                        width_shift_range=0.1,
-                        height_shift_range=0.1,
-                        shear_range=10,
-                        horizontal_flip=True,
-                        preprocessing_function=self.preprocess)
+			width_shift_range=0.1,
+			height_shift_range=0.1,
+			shear_range=10,
+			horizontal_flip=True,
+			preprocessing_function=self.preprocess)
 		valDatagen.fit(X_val)
 		self.model.fit_generator(trainDatagen.flow(X_train, Y_train, batch_size=batch_size),
 			validation_data=valDatagen.flow(X_val, Y_val, batch_size=batch_size),
@@ -80,15 +79,14 @@ class CustomModel:
 		pass
 
 	def finetuneDenseOnly(self, X, Y, epochs, batch_size, verbose=1):
-                early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-                self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])
+		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])
 
 
 class FaceVGG16(CustomModel, object):
 	def __init__(self, shape, out_dim, hid_dim):
 		self.hid_dim = hid_dim
 		super(FaceVGG16, self).__init__(shape, out_dim, "FaceVGG16")
-		#CustomModel.__init__(self, shape, out_dim)
 		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=self.shape)
 		last_layer = vgg_model.get_layer('pool5').output
 		x = Flatten(name='flatten')(last_layer)
@@ -177,4 +175,3 @@ class SmallRes(CustomModel, object):
 
 	def predict(self, X):
 		return self.model.predict(self.preprocess(X))
-
