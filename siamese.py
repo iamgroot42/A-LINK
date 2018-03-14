@@ -38,81 +38,25 @@ class CustomModel:
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(learningRate))
 	
-	def trainModel(self, X_train, X_val, epochs, batch_size, verbose=1):
-		# Expects data shape as N_classes x samples_per_class x 105 x 105 x 3
-		n_classes = X_train.shape[0]
-		n_examples = X_train.shape[1]
-		assert(n_classes == X_val.shape[0])
-
-		def train_batchgen(data):
-			while True:
-				categories = np.random.choice(n_classes, size=(batch_size,), replace=False)
-				pairs = [np.zeros((batch_size,) + self.shape) for i in range(2)]
-				targets = np.zeros((batch_size,))
-				targets[batch_size//2:] = 1
-				for i in range(batch_size):
-					category = categories[i]
-					idx_1 = np.random.randint(0, n_examples)
-					pairs[0][i, :, :, :] = self.preprocess(data[category,idx_1].reshape(self.shape))
-					idx_2 = np.random.randint(0, n_examples)
-					#pick images of same class for 1st half, different for 2nd
-					category_2 = category if i >= batch_size//2 else (category + np.random.randint(1, n_classes)) % n_classes
-					pairs[1][i, :, :, :] = self.preprocess(data[category_2,idx_2].reshape(self.shape))
-				yield pairs, targets
-
-		trainDatagen = batchgen(X_train)
-		valData = batchgen(X_val)
-
-		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01)
+	def trainModel(self, trainDatagen, epochs, batch_size, verbose=1):
+		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=verbose)
+		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
 		self.siamese_net.fit_generator(trainDatagen
-			,validation_data=valData
-			,validation_steps=len(X_val) / batch_size
-			,steps_per_epoch=len(X_train) / batch_size, epochs=epochs
+			,steps_per_epoch=400000 / batch_size, epochs=epochs
 			,callbacks=[early_stop, reduce_lr])
-
-	def make_oneshot_task(self, X, N):
-		n_val = X.shape[0]
-		n_ex_val = X.shape[1]
-		categories = np.random.choice(n_val, size=(N,), replace=False)
-		indices = np.random.randint(0,self.n_ex_val, size=(N,))
-		true_category = categories[0]
-		ex1, ex2 = np.random.choice(self.n_examples, replace=False, size=(2,))
-		test_image = np.asarray([X[true_category,ex1, :, :]] * N).reshape((N,) + self.shape)
-		support_set = X[categories,indices, :, :]
-		support_set[0, :, :] = X[true_category,ex2]
-		support_set = support_set.reshape((N,) + self.shape)
-		pairs = [test_image, support_set]
-		targets = np.zeros((N,))
-		targets[0] = 1
-		return pairs, targets
-
-	def make_oneshot_task(self, X, N):
-		n_classes, n_examples = X.shape[:2]
-		indices = np.random.randint(0, n_examples, size=(N,))
-		categories = np.random.choice(range(n_classes), size=(N,), replace=False)            
-		true_category = categories[0]
-		ex1, ex2 = np.random.choice(n_examples, replace=False, size=(2,))
-		test_image = np.asarray([X[true_category,ex1, :, :]] * N).reshape((N,) + self.shape)
-		support_set = X[categories,indices, :, :]
-		support_set[0, :, :] = X[true_category, ex2]
-		support_set = support_set.reshape((N,) + self.shape)
-		targets = np.zeros((N,))
-		targets[0] = 1
-		targets, test_image, support_set = shuffle(targets, test_image, support_set)
-		pairs = [test_image,support_set]
-
-		return pairs, targets
 	
-	def testAccuracy(self, X, N, k):
+	def testAccuracy(self, X, Y):
 		n_correct = 0
-		 for i in range(k):
-			inputs, targets = self.make_oneshot_task(self.preprocess(X), N)
-			probs = self.siamese_net.predict(inputs)
-			if np.argmax(probs) == np.argmax(targets):
-				n_correct += 1
-		percent_correct = n_correct / float(k)
-	   return percent_correct
+		for i in range(len(X)):
+			for j in range(len(X)):
+				for x in X[i]:
+					for y in X[j]:
+						prediction = np.argmax(self.predict([x, y]))
+						if prediction == 1 and Y[i] == Y[j]:
+							n_correct += 1
+						elif prediction == 0 and Y[i] != Y[j]:
+							n_correct += 1
+		return n_correct / float( len(X) ** 2)
 
 	def maybeLoadFromMemory(self):
 		try:
@@ -128,63 +72,30 @@ class CustomModel:
 		return X
 
 	def predict(self, X):
-		pass
+		return self.siamese_net.predict(self.preprocess(X))
 
 
-# class FaceVGG16(CustomModel, object):
-# 	def __init__(self, shape, out_dim, hid_dim):
-# 		self.hid_dim = hid_dim
-# 		super(FaceVGG16, self).__init__(shape, out_dim, "FaceVGG16")
-# 		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=self.shape)
-# 		last_layer = vgg_model.get_layer('pool5').output
-# 		x = Flatten(name='flatten')(last_layer)
-# 		x = Dense(self.hid_dim, activation='relu', name='fc6')(x)
-# 		x = Dense(self.hid_dim, activation='relu', name='fc7')(x)
-# 		out = Dense(self.out_dim, activation='softmax', name='fc8')(x)
-# 		self.model = Model(vgg_model.input, out)(x)
+class FaceVGG16(CustomModel, object):
+	def __init__(self, shape, modelName, learningRate=1.0)
+		super(FaceVGG16, self).__init__(shape, modelName, learningRate)
+		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=self.shape)
+		last_layer = vgg_model.get_layer('pool5').output
+		out = Flatten(name='flatten')(last_layer)
+		self.baseModel = Model(vgg_model.input, out)
 
-# 	def preprocess(self, X):
-# 		X_temp = np.copy(X)
-# 		return utils.preprocess_input(X_temp, version=1)
-
-# 	def predict(self, X):
-# 		preds = self.model.predict(self.preprocess(X))
-# 		return preds
+	def preprocess(self, X):
+		X_temp = np.copy(X)
+		return utils.preprocess_input(X_temp, version=1)
 
 
-# class RESNET50(CustomModel, object):
-# 	def __init__(self, shape, out_dim):
-# 		super(RESNET50, self).__init__(shape, out_dim, "RESNET50")
-# 		vgg_model = VGGFace(model='resnet50', include_top=False, input_shape=self.shape)
-# 		last_layer = vgg_model.get_layer('avg_pool').output
-# 		x = Flatten(name='flatten')(last_layer)
-# 		out = Dense(self.out_dim, activation='softmax', name='classifier')(x)
-# 		self.model = Model(vgg_model.input, out)
-# 		self.model.compile(loss=categorical_crossentropy,
-# 			optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
+class RESNET50(CustomModel, object):
+	def __init__(self, shape, modelName, learningRate=1.0):
+		super(RESNET50, self).__init__(shape, modelName, learningRate)
+		vgg_model = VGGFace(model='resnet50', include_top=False, input_shape=self.shape)
+		last_layer = vgg_model.get_layer('avg_pool').output
+		out = Flatten(name='flatten')(last_layer)
+		self.baseModel = Model(vgg_model.input, out)
 
-# 	def preprocess(self, X):
-# 		X_temp = np.copy(X)
-# 		return utils.preprocess_input(X_temp, version=2)
-
-# 	def predict(self, X):
-# 		preds = self.model.predict(self.preprocess(X))
-# 		return preds
-
-
-# class SENET50(CustomModel, object):
-# 	def __init__(self, shape, out_dim):
-# 		super(SENET50, self).__init__(shape, out_dim, "SETNET50")
-# 		vgg_model = VGGFace(model='senet50', include_top=False, input_shape=self.shape)
-# 		last_layer = vgg_model.get_layer('avg_pool').output
-# 		x = Flatten(name='flatten')(last_layer)
-# 		out = Dense(self.out_dim, activation='softmax', name='classifier')(x)
-# 		self.model = Model(vgg_model.input, out)
-
-# 	def preprocess(self, X):
-# 		X_temp = np.copy(X)
-# 		return utils.preprocess_input(X_temp, version=2)
-
-# 	def predict(self, X):
-# 		preds = self.model.predict(self.preprocess(X))
-# 		return preds
+	def preprocess(self, X):
+		X_temp = np.copy(X)
+		return utils.preprocess_input(X_temp, version=2)

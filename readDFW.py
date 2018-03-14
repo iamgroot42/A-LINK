@@ -40,14 +40,15 @@ def cropAllFolders(prefix, trainFolder, boxMap):
 	print("Problem with", prob)
 
 
-def getAllTrainData(prefix, trainFolder, imageRes, imposter=False):
+def getAllTrainData(prefix, trainFolder, imageRes):
 	allImages = os.path.join(prefix, trainFolder)
-	X_plain, Y_plain = [], []
-	X_val, Y_val = [], []
-	X_dig, Y_dig = [], []
-	X_imp, Y_imp = [], []
-	names = os.listdir(allImages)
+	X_plain = []
+	X_dig = []
+	X_imp = []
 	for person in os.listdir(allImages):
+		X_person_dig = []
+		X_person_imp = []
+		X_person_normal = []
 		dirPath = os.path.join(allImages, person)
 		for impath in os.listdir(dirPath):
 			fullName = os.path.join(dirPath, impath)
@@ -57,24 +58,91 @@ def getAllTrainData(prefix, trainFolder, imageRes, imposter=False):
 				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
 					print img.shape
 				if '_h_' in fileName:
-					X_dig.append(img)
-					Y_dig.append(person)
+					X_person_dig.append(img)
 				elif '_I_' in fileName:
-					if imposter:
-						X_imp.append(img)
-						Y_imp.append(person)
-				elif fileName[-2:] == '_a':
-					X_val.append(img)
-					Y_val.append(person)
+					X_person_imp.append(img)
 				else:
-					X_plain.append(img)
-					Y_plain.append(person)
+					X_person_normal.append(img)
 			except Exception, e:
 				print(e)
-	if imposter:
-		return names, (np.stack(X_plain), np.stack(Y_plain)), (np.stack(X_val), np.stack(Y_val)), (np.stack(X_dig), np.stack(Y_dig)), (np.stack(X_imp), np.stack(Y_imp))
-	else:
-		return names, (np.stack(X_plain), np.stack(Y_plain)), (np.stack(X_val), np.stack(Y_val)), (np.stack(X_dig), np.stack(Y_dig))
+		X_dig.append(np.stack(X_person_dig))
+		X_imp.append(np.stack(X_person_imp))
+		X_plain.append(np.stack(X_person_normal))
+	assert(len(X_plain) == len(X_val)) # 1 validation & 1 training sample per person
+	X_plain = np.stack(X_plain)
+	X_val = np.stack(X_val)
+	return (X_plain, X_dig, X_imp)
+
+
+def getAllTestData(prefix, trainFolder, imageRes):
+	allImages = os.path.join(prefix, trainFolder)
+	X = []
+	Y = []
+	for person_index, person in enumerate(os.listdir(allImages)):
+		dirPath = os.path.join(allImages, person)
+		for impath in os.listdir(dirPath):
+			fullName = os.path.join(dirPath, impath)
+			fileName = impath.rsplit('.', 1)[0]
+			try:
+				img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
+				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
+					print img.shape
+				X.append(img)
+				if '_h_' in fileName:
+					Y.append(person_index)
+				elif '_I_' in fileName:
+					Y.append(-person_index)
+				else:
+					Y.append(person_index)
+			except Exception, e:
+				print(e)
+	X = np.stack(X)
+	Y = np.stack(Y)
+	return (X, Y)
+
+def getNormalGenerator(X_imposter, batch_size):
+	while True:
+		X_left, X_right, Y = [], [], []
+		for i in range(len(X_imposter)):
+			for j in range(len(X_imposter)):
+				for x in X_imposter[i]:
+					for y in X_imposter[j]:						
+						X_left.append(x)
+						X_right.append(y)
+						if i == j:
+							Y.append([0 1])
+						else:
+							Y.append([1 0])
+				if len(Y) == batch_size:
+					yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
+					X_left, X_right, Y = [], [], []
+
+
+def getImposterGenerator(X_plain, X_imposter, batch_size):
+	while True:
+		X_left, X_right, Y = [], [], []
+		for x in X_plain:
+			for imposter in X_imposter:
+				for y in imposter:
+				X_left.append(x)
+				X_right.append(y)
+				Y.append([1 0])
+				if len(Y) == batch_size:
+					yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
+					X_left, X_right, Y = [], [], []
+
+
+def getGenerator(X_plain, X_imposter, batch_size):
+	norGen = getNormalGenerator(X_plain, batch_size)
+	normImpGen = getNormalGenerator(X_imposter, batch_size)
+	impGen  = getImposterGenerator(X_plain, X_imposter, batch_size)
+	while True:
+		X1, Y1 = norGen.next()
+		X2, Y2 = normImpGen.next()
+		X3, Y3 = impGen.next()
+		Y = np.concatenate((Y1, Y2, Y2), axis=0)
+		X = [np.concatenate((X1[0], X2[0], X3[0]), axis=0), np.concatenate((X1[1], X2[1], X3[1]), axis=0)
+		yield X, Y
 
 
 if __name__ == "__main__":

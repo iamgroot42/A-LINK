@@ -3,8 +3,7 @@ import numpy as np
 
 
 class Bagging:
-	def __init__(self, n_classes, models, attacks):
-		self.n_classes = n_classes
+	def __init__(self, models, attacks):
 		self.models = models
 		assert(len(attacks) == len(self.models))
 		self.attacks = []

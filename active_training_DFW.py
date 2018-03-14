@@ -1,7 +1,7 @@
 import readDFW
 import itertools
 import committee
-import model
+import siamese
 import noise
 import helpers
 
@@ -32,7 +32,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
-flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
+flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data imgaes')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
 flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
@@ -41,43 +41,33 @@ flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled exampl
 
 
 if __name__ == "__main__":
-	names, (X_plain, Y_plain), (X_val, Y_val), (X_dig, Y_dig) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
-	
-	# Get mappings from names of people to softmax indices
-	indices = {names[i]:i for i in range(len(names))}
-	revIndices = {v: k for k, v in indices.iteritems()}
-	N_CLASSES = len(names)
-
-	# Convert data to one-hot
-	Y_plain = helpers.names_to_onehot(Y_plain, indices)
-	Y_val = helpers.names_to_onehot(Y_val, indices)
-	Y_dig = helpers.names_to_onehot(Y_dig, indices)
-
-	# Split available disguised data for training and finetuning
-        (X_dig_train, Y_dig_train), (X_dig_ft, Y_dig_ft) = helpers.unisonSplit(X_dig, Y_dig, 0.4)
+	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
+	(X_test, Y_test) = readDFW.getAllTestData(FLAGS.dataDirPrefix, FLAGS.testImagesDir, IMAGERES)
 
 	#ensemble = [model.FaceVGG16(IMAGERES, N_CLASSES, 512), model.RESNET50(IMAGERES, N_CLASSES)]
-	ensemble = [model.RESNET50(IMAGERES, N_CLASSES)]
+	ensemble = [model.RESNET50(IMAGERES, "ensemble1" ,1.0)]
 	# ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
-	bag = committee.Bagging(N_CLASSES, ensemble, ensembleNoise)
-	disguisedFacesModel = model.RESNET50(IMAGERES, N_CLASSES)
+	bag = committee.Bagging(ensemble, ensembleNoise)
+	disguisedFacesModel = model.RESNET50(IMAGERES, "standalone1", 1.0)
 	
 	# Finetune disguised-faces model
-	disguisedFacesModel.trainWithAugmentation(X_dig_train, Y_dig_train, FLAGS.low_epochs, 16, 1)
+	trainDatagen = readDFW.getGenerator(X_dig, X_imp, FLAGS.batch_size)
+	disguisedFacesModel.trainModel(trainDatagen, FLAGS.epochs, FLAGS.batch_size, verbose=1)
 	print('Finetuned disguised-faces model')
 
 	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
-		if not individualModel.maybeLoadFromMemory():
-			individualModel.trainWithAugmentation(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
-			#individualModel.trainWithoutVal(X_plain, Y_plain, FLAGS.low_epochs, 16, 1)
+		# if not individualModel.maybeLoadFromMemory():
+		trainDatagen = readDFW.getGenerator(X_plain, X_imp, FLAGS.batch_size)
+		individualModel.trainModel(trainDatagen, FLAGS.epochs, FLAGS.batch_size, verbose=1)
 	print('Finetuned undisguised-faces models')
 
 	# Calculate accuracy of disguised-faces model at this stage
-	print('Disguised model test accuracy:', disguisedFacesModel.model.evaluate(X_val, Y_val)[1])
+	print('Disguised model test accuracy:', disguisedFacesModel.model.testAccuracy(X_test, Y_test))
+	exit()
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_x = np.array([])
@@ -85,7 +75,7 @@ if __name__ == "__main__":
 	UN_SIZE = len(X_dig_ft)
 
 	# Cumulative data (don't forget old data)
-	cumu_x = X_dig_train
+	cumu_x = X_dig
 	cumu_y = Y_dig_train
 
 	for ii in range(0, len(X_dig_ft), 16):
