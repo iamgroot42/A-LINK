@@ -1,25 +1,26 @@
 import numpy as np
 from PIL import Image
 import os
+from itertools import tee
 import cv2
 import numpy as np
 
 
 def cropImages(prefix, dirPath, faceBoxes):
-	imagesBefore = os.listdir(os.path.join(prefix, dirPath))
+	imagesBefore = os.listdir(os.path.join(prefix, dirPath)).sort()
 	i = 0
 	for imPath in imagesBefore:
 		try:
 			partialName = os.path.join(dirPath, imPath)
 			fullName = os.path.join(prefix, partialName)
 			img = Image.open(fullName).convert('RGB')
-			tx, h, w, by = faceBoxes[partialName]
+			tx, h, w, by = faceBoxes[partialName.decode('utf-8')]
 			img = img.crop((tx, h, w, by))
-			#img.save(fullName)
-		except:
-			#os.remove(fullName)
+			img.save(fullName)
+		except Exception, e:
+			os.remove(fullName)
 			i += 1
-			#print("File I/O error")
+			print(fullName.decode('utf8'))
 	return i
 
 
@@ -35,22 +36,25 @@ def constructIndexMap(filePath):
 def cropAllFolders(prefix, trainFolder, boxMap):
 	allImages = os.path.join(prefix, trainFolder)
 	prob = 0
-	for person in os.listdir(allImages):
+	personList = os.listdir(allImages).sort()
+	for person in personList:
 		prob += cropImages(prefix, os.path.join(trainFolder, person), boxMap)
 	print("Problem with", prob)
 
 
-def getAllTrainData(prefix, trainFolder, imageRes):
+def getAllTrainData(prefix, trainFolder, imageRes, model):
 	allImages = os.path.join(prefix, trainFolder)
 	X_plain = []
 	X_dig = []
 	X_imp = []
-	for person in os.listdir(allImages):
+	personList = os.listdir(allImages).sort()
+	for person in personList:
 		X_person_dig = []
 		X_person_imp = []
 		X_person_normal = []
 		dirPath = os.path.join(allImages, person)
-		for impath in os.listdir(dirPath):
+		faceList = os.listdir(dirPath).sort()
+		for impath in faceList:
 			fullName = os.path.join(dirPath, impath)
 			fileName = impath.rsplit('.', 1)[0]
 			try:
@@ -65,22 +69,23 @@ def getAllTrainData(prefix, trainFolder, imageRes):
 					X_person_normal.append(img)
 			except Exception, e:
 				print(e)
-		X_dig.append(np.stack(X_person_dig))
-		X_imp.append(np.stack(X_person_imp))
-		X_plain.append(np.stack(X_person_normal))
-	assert(len(X_plain) == len(X_val)) # 1 validation & 1 training sample per person
-	X_plain = np.stack(X_plain)
-	X_val = np.stack(X_val)
+		if X_person_dig and X_person_imp and X_person_imp:
+			X_dig.append(model.process(np.stack(X_person_dig)))
+			X_imp.append(model.process(np.stack(X_person_imp)))
+			X_plain.append(model.process(np.stack(X_person_normal)))
+	assert(len(X_plain) == len(X_dig) and len(X_dig) == len(X_imp)) # 1 validation & 1 training sample per person
 	return (X_plain, X_dig, X_imp)
 
 
-def getAllTestData(prefix, trainFolder, imageRes):
+def getAllTestData(prefix, trainFolder, imageRes, model):
 	allImages = os.path.join(prefix, trainFolder)
 	X = []
 	Y = []
-	for person_index, person in enumerate(os.listdir(allImages)):
+	personList = os.listdir(allImages).sort()
+	for person_index, person in enumerate(personList):
 		dirPath = os.path.join(allImages, person)
-		for impath in os.listdir(dirPath):
+		faceList = os.listdir(dirPath).sort()
+		for impath in faceList:
 			fullName = os.path.join(dirPath, impath)
 			fileName = impath.rsplit('.', 1)[0]
 			try:
@@ -98,7 +103,8 @@ def getAllTestData(prefix, trainFolder, imageRes):
 				print(e)
 	X = np.stack(X)
 	Y = np.stack(Y)
-	return (X, Y)
+	return (model.process(X), Y)
+
 
 def getNormalGenerator(X_imposter, batch_size):
 	while True:
@@ -110,29 +116,30 @@ def getNormalGenerator(X_imposter, batch_size):
 						X_left.append(x)
 						X_right.append(y)
 						if i == j:
-							Y.append([0 1])
+							Y.append([1])
 						else:
-							Y.append([1 0])
-				if len(Y) == batch_size:
-					yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
-					X_left, X_right, Y = [], [], []
+							Y.append([0])
+						if len(Y) == batch_size:
+							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
+							X_left, X_right, Y = [], [], []
 
 
 def getImposterGenerator(X_plain, X_imposter, batch_size):
 	while True:
 		X_left, X_right, Y = [], [], []
-		for x in X_plain:
-			for imposter in X_imposter:
-				for y in imposter:
-				X_left.append(x)
-				X_right.append(y)
-				Y.append([1 0])
-				if len(Y) == batch_size:
-					yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
-					X_left, X_right, Y = [], [], []
+		for person in X_plain:
+			for x in person:
+				for imposter in X_imposter:
+					for y in imposter:
+						X_left.append(x)
+						X_right.append(y)
+						Y.append([0])
+						if len(Y) == batch_size:
+							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
+							X_left, X_right, Y = [], [], []
 
 
-def getGenerator(X_plain, X_imposter, batch_size):
+def getGenerator(X_plain, X_imposter, batch_size, val_ratio=0.2):
 	norGen = getNormalGenerator(X_plain, batch_size)
 	normImpGen = getNormalGenerator(X_imposter, batch_size)
 	impGen  = getImposterGenerator(X_plain, X_imposter, batch_size)
@@ -141,13 +148,57 @@ def getGenerator(X_plain, X_imposter, batch_size):
 		X2, Y2 = normImpGen.next()
 		X3, Y3 = impGen.next()
 		Y = np.concatenate((Y1, Y2, Y2), axis=0)
-		X = [np.concatenate((X1[0], X2[0], X3[0]), axis=0), np.concatenate((X1[1], X2[1], X3[1]), axis=0)
-		yield X, Y
+		X = [np.concatenate((X1[0], X2[0], X3[0]), axis=0), np.concatenate((X1[1], X2[1], X3[1]), axis=0)]
+		indices = np.random.permutation(len(Y))
+		splitPoint = int(len(Y) * val_ratio)
+		X_train, Y_train = [ x[indices[splitPoint:]] for x in X], Y[indices[splitPoint:]]
+		X_test, Y_test = [ x[indices[:splitPoint]] for x in X], Y[indices[:splitPoint]]
+		yield (X_train, Y_train), (X_test, Y_test)
+
+
+def splitGen(sourceGen, train):
+	for tuple in sourceGen:
+		if train:
+			yield tuple[0]
+		else:
+			yield tuple[1]
+
+
+def getTrainValGens(X_plain, X_imposter, batch_size, val_ratio=0.2):
+	dataGen1, dataGen2 = tee(getGenerator(X_plain, X_imposter, batch_size, val_ratio))
+	trainGen, valGen = splitGen(dataGen1, True), splitGen(dataGen1, False)
+	return trainGen, valGen
+
+
+def splitDisguiseData(X_dig, pre_ratio=0.5):
+	X_dig_pre, X_dig_post = [], []
+	for i in range(len(X_dig)):
+		pre_ratio = int(X_dig[i].shape[0] * pre_ratio)
+		indices = np.random.permutation(X_dig[i].shape[0])
+		assert(len(X_dig) >= 2) #Required, for the way model is currenty built
+		X_dig_pre.append(X_dig[i][indices[:pre_ratio]])
+		X_dig_post.append(X_dig[i][indices[pre_ratio:]])
+	return (X_dig_pre, X_dig_post)
+
+
+def createMiniBatch(X_plain, X_dig):
+	X_left, X_right, Y = [], [], []
+	for i in range(X_plain):
+		for j in range(X_dig):
+			for x in X_plain[i]:
+				for y in X_dig[j]:
+					X_left.append(x)
+					X_right.append(y)
+					if i == j:
+						Y.append([0, 1])
+					else:
+						Y.append([1, 0])
+	return [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 
 
 if __name__ == "__main__":
 	prefix = "DFW/DFW_Data/"
-	trainBoxesPath = prefix + "Training_data_face_coordinate.txt"
+	trainBoxesPath = prefix + "Testing_data_face_coordinate.txt"
 	boxMap = constructIndexMap(trainBoxesPath)
-	cropAllFolders(prefix, "Training_data", boxMap)
+	cropAllFolders(prefix, "Testing_data", boxMap)
 	#getAllTrainData(prefix, "Training_data")

@@ -25,6 +25,8 @@ keras.backend.set_session(sess)
 
 # Global
 IMAGERES = (224, 224)
+FEATURERES = (2048,)
+FRAMEWORK_BS = 16
 N_CLASSES = None
 ACTIVE_COUNT = 0
 
@@ -34,72 +36,85 @@ flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data director
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data imgaes')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
-flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training disguised-faces model')
-flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
+flags.DEFINE_integer('dig_epochs', 50, 'Number of epochs while training disguised-faces model')
+flags.DEFINE_integer('undig_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 
 
 if __name__ == "__main__":
-	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
-	(X_test, Y_test) = readDFW.getAllTestData(FLAGS.dataDirPrefix, FLAGS.testImagesDir, IMAGERES)
+	# Define image featurization model
+	conversionModel = siamese.RESNET50(IMAGERES)
 
-	#ensemble = [model.FaceVGG16(IMAGERES, N_CLASSES, 512), model.RESNET50(IMAGERES, N_CLASSES)]
-	ensemble = [model.RESNET50(IMAGERES, "ensemble1" ,1.0)]
+	# Load images, convert to feature vectors for faster processing
+	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
+	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
+	(X_test, Y_test) = readDFW.getAllTestData(FLAGS.dataDirPrefix, FLAGS.testImagesDir, IMAGERES, conversionModel)
+
+	# Split X_dig person-wise for pretraining & framework data
+	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
+	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
+
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "ensemble1", 0.1)]
 	# ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = model.RESNET50(IMAGERES, "standalone1", 1.0)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "standalone1", 0.1)
 	
 	# Finetune disguised-faces model
-	trainDatagen = readDFW.getGenerator(X_dig, X_imp, FLAGS.batch_size)
-	disguisedFacesModel.trainModel(trainDatagen, FLAGS.epochs, FLAGS.batch_size, verbose=1)
+	trainDatagen, valDatagen = readDFW.getTrainValGens(X_dig_pre, X_imp, FLAGS.batch_size, 0.2)
+	disguisedFacesModel.trainModel(trainDatagen, valDatagen, FLAGS.dig_epochs, FLAGS.batch_size, verbose=1)
 	print('Finetuned disguised-faces model')
 
 	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
 		# if not individualModel.maybeLoadFromMemory():
-		trainDatagen = readDFW.getGenerator(X_plain, X_imp, FLAGS.batch_size)
-		individualModel.trainModel(trainDatagen, FLAGS.epochs, FLAGS.batch_size, verbose=1)
+		trainDatagen, valDatagen = readDFW.getTrainValGens(X_plain, X_imp, FLAGS.batch_size, 0.2)
+		individualModel.trainModel(trainDatagen, valDatagen, FLAGS.undig_epochs, FLAGS.batch_size, verbose=1)
 	print('Finetuned undisguised-faces models')
 
 	# Calculate accuracy of disguised-faces model at this stage
-	print('Disguised model test accuracy:', disguisedFacesModel.model.testAccuracy(X_test, Y_test))
-	exit()
+	# Too effing slow rn :|
+	# print('Disguised model test accuracy:', disguisedFacesModel.testAccuracy(X_test, Y_test))
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_x = np.array([])
 	train_df_y = np.array([])
-	UN_SIZE = len(X_dig_ft)
 
-	# Cumulative data (don't forget old data)
-	cumu_x = X_dig
-	cumu_y = Y_dig_train
+	# Do something about catastrophic forgetting (?)
 
-	for ii in range(0, len(X_dig_ft), 16):
-		batch_x, batch_y = X_dig_ft[ii:ii + 16], Y_dig_ft[ii: ii + 16]
+	# Framework begins
+	for ii in range(0, len(X_dig_post), FRAMEWORK_BS):
+		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
+		disguise_part = X_dig_post[ii: ii + FRAMEWORK_BS]
+
+		# Create pairs of images
+		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
+
+		# Get featurized faces to be passed to committee
+		batch_x_features = [ conversionModel.predict(p) for p in batch_x]
 
 		# Get predictions made by committee
-		ensemblePredictions = bag.predict(batch_x)
+		ensemblePredictions = bag.predict(batch_x_features)
 
 		# Get images with added noise
 		noisy_data = bag.attackModel(batch_x, IMAGERES)
 
-		# Pass these to low res model, get predictions
+		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
 		for j in range(len(disguisedPredictions)):
-			if revIndices[np.argmax(disguisedPredictions[j])] != revIndices[np.argmax(ensemblePredictions[j])]:
+			if np.argmax(disguisedPredictions[j]) != np.argmax(ensemblePredictions[j]):
 				misclassifiedIndices.append(j)
 
 		# Query oracle, pick examples for which ensemble was right
 		queryIndices = []
 		for j in misclassifiedIndices:
-			if revIndices[np.argmax(ensemblePredictions[j])] == revIndices[np.argmax(batch_y[j])]:
+			if np.argmax(ensemblePredictions[j]) == np.argmax(batch_y[j]):
 				queryIndices.append(j)
 
 		# Update count of queries to oracle
@@ -128,10 +143,8 @@ if __name__ == "__main__":
 			# Also add unperturbed versions of these examples to avoid overfitting on noise
 			train_df_x = np.concatenate((train_df_x, batch_x[queryIndices]))
 			train_df_y = np.concatenate((train_df_y, helpers.one_hot(intermediate, N_CLASSES)))
-			# Use a lower learning rate for finetuning (accumulate data as a countermeasure against catastrophic forgetting)
-			cumu_x = np.concatenate((cumu_x, train_df_x))
-			cumu_y = np.concatenate((cumu_y, train_df_y))
-			disguisedFacesModel.finetuneDenseOnly(cumu_x, cumu_y, 3, 16, 0)
+			# Use a lower learning rate for finetuning
+			disguisedFacesModel.finetuneDenseOnly(train_df_x, train_df_y, 3, 16, 0)
 			train_df_x = np.array([])
 			train_df_y = np.array([])
 			# Log test accuracy

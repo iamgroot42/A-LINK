@@ -1,4 +1,3 @@
-from keras.losses import categorical_crossentropy
 from keras.engine import  Model
 from keras.models import Sequential, load_model
 from keras.layers import Flatten, Dense, Input, Activation, Dropout, Conv2D, MaxPooling2D
@@ -112,7 +111,7 @@ class RESNET50(CustomModel, object):
 		x = Flatten(name='flatten')(last_layer)
 		out = Dense(self.out_dim, activation='softmax', name='classifier')(x)
 		self.model = Model(vgg_model.input, out)
-		self.model.compile(loss=categorical_crossentropy,
+		self.model.compile(loss='categorical_crossentropy',
 			optimizer=Adadelta(lr=1.0), metrics=['accuracy'])
 
 	def preprocess(self, X):
@@ -167,7 +166,7 @@ class SmallRes(CustomModel, object):
 		self.model.add(Dropout(0.5))
 		self.model.add(Dense(out_dim))
 		self.model.add(Activation('softmax'))
-		self.model.compile(loss=categorical_crossentropy,
+		self.model.compile(loss='categorical_crossentropy',
 			optimizer=rmsprop(lr=0.001, decay=1e-6), metrics=['accuracy'])
 
 	def preprocess(self, X):
