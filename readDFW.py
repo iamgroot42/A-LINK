@@ -3,11 +3,10 @@ from PIL import Image
 import os
 from itertools import tee
 import cv2
-import numpy as np
 
 
 def cropImages(prefix, dirPath, faceBoxes):
-	imagesBefore = os.listdir(os.path.join(prefix, dirPath)).sort()
+	imagesBefore = sorted(os.listdir(os.path.join(prefix, dirPath)))
 	i = 0
 	for imPath in imagesBefore:
 		try:
@@ -36,7 +35,7 @@ def constructIndexMap(filePath):
 def cropAllFolders(prefix, trainFolder, boxMap):
 	allImages = os.path.join(prefix, trainFolder)
 	prob = 0
-	personList = os.listdir(allImages).sort()
+	personList = sorted(os.listdir(allImages))
 	for person in personList:
 		prob += cropImages(prefix, os.path.join(trainFolder, person), boxMap)
 	print("Problem with", prob)
@@ -47,13 +46,13 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 	X_plain = []
 	X_dig = []
 	X_imp = []
-	personList = os.listdir(allImages).sort()
+	personList = sorted(os.listdir(allImages))
 	for person in personList:
 		X_person_dig = []
 		X_person_imp = []
 		X_person_normal = []
 		dirPath = os.path.join(allImages, person)
-		faceList = os.listdir(dirPath).sort()
+		faceList = sorted(os.listdir(dirPath))
 		for impath in faceList:
 			fullName = os.path.join(dirPath, impath)
 			fileName = impath.rsplit('.', 1)[0]
@@ -69,7 +68,7 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 					X_person_normal.append(img)
 			except Exception, e:
 				print(e)
-		if X_person_dig and X_person_imp and X_person_imp:
+		if X_person_dig and X_person_imp and X_person_normal:
 			X_dig.append(model.process(np.stack(X_person_dig)))
 			X_imp.append(model.process(np.stack(X_person_imp)))
 			X_plain.append(model.process(np.stack(X_person_normal)))
@@ -77,14 +76,47 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 	return (X_plain, X_dig, X_imp)
 
 
+def getRawTrainData(prefix, trainFolder, imageRes):
+        allImages = os.path.join(prefix, trainFolder)
+        X_plain = []
+        X_dig = []
+        personList = sorted(os.listdir(allImages))
+        for person in personList:
+                X_person_dig = []
+		X_person_imp = []
+                X_person_normal = []
+                dirPath = os.path.join(allImages, person)
+                faceList = sorted(os.listdir(dirPath))
+                for impath in faceList:
+                        fullName = os.path.join(dirPath, impath)
+                        fileName = impath.rsplit('.', 1)[0]
+                        try:
+                                img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
+                                if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
+                                        print img.shape
+                                if '_h_' in fileName:
+                                        X_person_dig.append(img)
+                                elif '_I_' in fileName:
+					X_person_imp.append(None)
+                                else:
+                                        X_person_normal.append(img)
+                        except Exception, e:
+                                print(e)
+                if X_person_dig and X_person_imp and X_person_imp:
+                        X_dig.append(np.stack(X_person_dig))
+                        X_plain.append(np.stack(X_person_normal))
+        assert(len(X_plain) == len(X_dig)) # 1 validation & 1 training sample per person
+        return (X_plain, X_dig)
+
+
 def getAllTestData(prefix, trainFolder, imageRes, model):
 	allImages = os.path.join(prefix, trainFolder)
 	X = []
 	Y = []
-	personList = os.listdir(allImages).sort()
+	personList = sorted(os.listdir(allImages))
 	for person_index, person in enumerate(personList):
 		dirPath = os.path.join(allImages, person)
-		faceList = os.listdir(dirPath).sort()
+		faceList = sorted(os.listdir(dirPath))
 		for impath in faceList:
 			fullName = os.path.join(dirPath, impath)
 			fileName = impath.rsplit('.', 1)[0]
@@ -173,19 +205,31 @@ def getTrainValGens(X_plain, X_imposter, batch_size, val_ratio=0.2):
 def splitDisguiseData(X_dig, pre_ratio=0.5):
 	X_dig_pre, X_dig_post = [], []
 	for i in range(len(X_dig)):
-		pre_ratio = int(X_dig[i].shape[0] * pre_ratio)
-		indices = np.random.permutation(X_dig[i].shape[0])
-		assert(len(X_dig) >= 2) #Required, for the way model is currenty built
-		X_dig_pre.append(X_dig[i][indices[:pre_ratio]])
-		X_dig_post.append(X_dig[i][indices[pre_ratio:]])
+		splitPoint = int(X_dig[i].shape[0] * pre_ratio)
+		#indices = np.random.permutation(X_dig[i].shape[0])
+		indices = np.arange(X_dig[i].shape[0])
+		#print(X_dig[i].shape[0], X_dig[i][indices[:splitPoint]].shape[0], X_dig[i][indices[splitPoint:]].shape[0])
+		assert(len(X_dig) >= 2), "You dead, nigga" #Required, for the way model is currenty built
+		X_dig_pre.append(X_dig[i][indices[:splitPoint]])
+		X_dig_post.append(X_dig[i][indices[splitPoint:]])
 	return (X_dig_pre, X_dig_post)
 
 
 def createMiniBatch(X_plain, X_dig):
 	X_left, X_right, Y = [], [], []
-	for i in range(X_plain):
-		for j in range(X_dig):
+	for i in range(len(X_plain)):
+		for j in range(len(X_dig)):
 			for x in X_plain[i]:
+				for y in X_dig[j]:
+					X_left.append(x)
+					X_right.append(y)
+					if i == j:
+						Y.append([0, 1])
+					else:
+						Y.append([1, 0])
+	for i in range(len(X_dig)):
+		for j in range(len(X_dig)):
+			for x in X_dig[i]:
 				for y in X_dig[j]:
 					X_left.append(x)
 					X_right.append(y)

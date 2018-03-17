@@ -2,6 +2,7 @@
 *_model
 RESNET50
 SmallRes
+*.h5
 
 DFW/*
 

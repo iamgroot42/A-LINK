@@ -36,21 +36,33 @@ class SiameseNetwork:
 		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
 		self.siamese_net.fit_generator(trainDatagen
 			,steps_per_epoch=320000 / batch_size, epochs=epochs
-			,validation_data=valGen, validation_steps = 80000 / batch_size
+			#,validation_data=valGen, validation_steps = 80000 / batch_size
 			,callbacks=[early_stop, reduce_lr])
+
+	def finetune(self, X, Y, epochs, batch_size, verbose=1):
+		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
+		self.siamese_net.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop, reduce_lr])
 	
-	def testAccuracy(self, X, Y):
-		n_correct = 0
-		total = 0
-		for i, x in tqdm(enumerate(X)):
+	def testAccuracy(self, X, Y, batch_size=512):
+		n_correct, total = 0, 0
+		X_left, X_right, Y_send = [], [], []
+		for i, x in enumerate(X):
 			for j, y in enumerate(X):
-				prediction = np.argmax(self.predict([np.stack([x]), np.stack([y])])[0])
-				total += 1
-				if prediction == 1 and Y[i] == Y[j]:
-					n_correct += 1
-				elif prediction == 0 and Y[i] != Y[j]:
-					n_correct += 1
-		assert(int(len(X)**2) == total)
+				X_left.append(x)
+				X_right.append(y)
+				Y_send.append(1*(Y[i] == Y[j]))
+				if len(X_left) == batch_size:
+					Y_send = np.stack(Y_send)
+					predictions = np.argmax(self.siamese_net.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
+					n_correct += np.sum(predictions == Y_send)
+					total += len(X_left)
+					X_left, X_right, Y_send = [], [], []
+		if len(X_left) > 0:
+			Y_send = np.stack(Y_send)
+			predictions = np.argmax(self.siamese_net.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
+			n_correct += np.sum(predictions == Y_send)
+			total += len(X_left)
 		return n_correct / float(total)
 
 	def maybeLoadFromMemory(self):

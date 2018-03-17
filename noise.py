@@ -12,6 +12,7 @@ class Noise(object):
 
 	def addNoise(self, images):
 		noisy_images = []
+		print("WOOHOO MADE IT SO FAR!")
 		for image in images:
 			noisy_images.append(self.addIndividualNoise(image))
 		return np.array(noisy_images)

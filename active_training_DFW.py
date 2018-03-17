@@ -27,7 +27,7 @@ keras.backend.set_session(sess)
 IMAGERES = (224, 224)
 FEATURERES = (2048,)
 FRAMEWORK_BS = 16
-N_CLASSES = None
+N_CLASSES = 2
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
-	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
+	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 	(X_test, Y_test) = readDFW.getAllTestData(FLAGS.dataDirPrefix, FLAGS.testImagesDir, IMAGERES, conversionModel)
 
 	# Split X_dig person-wise for pretraining & framework data
@@ -61,18 +61,23 @@ if __name__ == "__main__":
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "standalone1", 0.1)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "disguisedModel", 0.1)
 	
 	# Finetune disguised-faces model
-	trainDatagen, valDatagen = readDFW.getTrainValGens(X_dig_pre, X_imp, FLAGS.batch_size, 0.2)
-	disguisedFacesModel.trainModel(trainDatagen, valDatagen, FLAGS.dig_epochs, FLAGS.batch_size, verbose=1)
-	print('Finetuned disguised-faces model')
+	if not disguisedFacesModel.maybeLoadFromMemory():
+		trainDatagen, valDatagen = readDFW.getTrainValGens(X_dig_pre, X_imp, FLAGS.batch_size, 0.2)
+		disguisedFacesModel.trainModel(trainDatagen, valDatagen, FLAGS.dig_epochs, FLAGS.batch_size, verbose=1)
+		disguisedFacesModel.save()
+		print('Finetuned disguised-faces model')
+	else:
+		print('Loaded disguised-faces model from memory')
 
 	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
-		# if not individualModel.maybeLoadFromMemory():
-		trainDatagen, valDatagen = readDFW.getTrainValGens(X_plain, X_imp, FLAGS.batch_size, 0.2)
-		individualModel.trainModel(trainDatagen, valDatagen, FLAGS.undig_epochs, FLAGS.batch_size, verbose=1)
+		if not individualModel.maybeLoadFromMemory():
+			trainDatagen, valDatagen = readDFW.getTrainValGens(X_plain, X_imp, FLAGS.batch_size, 0.2)
+			individualModel.trainModel(trainDatagen, valDatagen, FLAGS.undig_epochs, FLAGS.batch_size, verbose=1)
+			individualModel.save()
 	print('Finetuned undisguised-faces models')
 
 	# Calculate accuracy of disguised-faces model at this stage
@@ -84,23 +89,29 @@ if __name__ == "__main__":
 	train_df_y = np.array([])
 
 	# Do something about catastrophic forgetting (?)
+	UN_SIZE = 0
 
 	# Framework begins
+	print("Framework begins")
 	for ii in range(0, len(X_dig_post), FRAMEWORK_BS):
 		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
 		disguise_part = X_dig_post[ii: ii + FRAMEWORK_BS]
 
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
+		UN_SIZE += len(batch_x[0])
 
 		# Get featurized faces to be passed to committee
-		batch_x_features = [ conversionModel.predict(p) for p in batch_x]
+		batch_x_features = [ conversionModel.process(p) for p in batch_x]
 
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
 
 		# Get images with added noise
 		noisy_data = bag.attackModel(batch_x, IMAGERES)
+
+		# Get features back from noisy images
+                noisy_data = [ conversionModel.process(p) for p in noisy_data ]
 
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
@@ -124,7 +135,6 @@ if __name__ == "__main__":
 		if len(queryIndices) == 0:
 			continue
 
-		# Convert class mappings (high/res)
 		intermediate = []
 		for qi in queryIndices:
 			intermediate.append(np.argmax(ensemblePredictions[qi]))
@@ -140,19 +150,20 @@ if __name__ == "__main__":
 
 		if train_df_x.shape[0] >= FLAGS.batch_send:
 			# Finetune disguised-faces model with this actively selected data points
-			# Also add unperturbed versions of these examples to avoid overfitting on noise
-			train_df_x = np.concatenate((train_df_x, batch_x[queryIndices]))
+			# Also add unperturbed images to avoid overfitting on noise
+			train_df_x = np.concatenate((train_df_x, batch_x_features[queryIndices]))
 			train_df_y = np.concatenate((train_df_y, helpers.one_hot(intermediate, N_CLASSES)))
 			# Use a lower learning rate for finetuning
-			disguisedFacesModel.finetuneDenseOnly(train_df_x, train_df_y, 3, 16, 0)
+			disguisedFacesModel.finetune(train_df_x, train_df_y, 3, 16, 0)
 			train_df_x = np.array([])
 			train_df_y = np.array([])
-			# Log test accuracy
-			print('Disguised model test accuracy (after this pass):', disguisedFacesModel.model.evaluate(X_val, Y_val)[1])
 
 		# Stop algorithm if limit reached/exceeded
-		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
+		if int(FLAGS.active_ratio * len(X_dig_post)) <= ACTIVE_COUNT:
 			break
 
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
+
+	# Final test accuracy of disguised-faces model
+	print("Disguised Face Test Accuracy", disguisedFacesModel.testAccuracy(X_test, Y_test))
