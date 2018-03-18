@@ -3,7 +3,7 @@
 RESNET50
 SmallRes
 *.h5
-
+*.out
 DFW/*
 
 # Data, Model files

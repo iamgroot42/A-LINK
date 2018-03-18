@@ -3,6 +3,7 @@ from PIL import Image
 import os
 from itertools import tee
 import cv2
+import re
 
 
 def cropImages(prefix, dirPath, faceBoxes):
@@ -10,10 +11,11 @@ def cropImages(prefix, dirPath, faceBoxes):
 	i = 0
 	for imPath in imagesBefore:
 		try:
-			partialName = os.path.join(dirPath, imPath)
-			fullName = os.path.join(prefix, partialName)
+			partialName = os.path.join(dirPath, imPath).decode('utf-8').replace('\xef\xbb\xbf', '')
+			fullName = os.path.join(prefix, partialName).decode('utf8')
+			fullName =  re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
 			img = Image.open(fullName).convert('RGB')
-			tx, h, w, by = faceBoxes[partialName.decode('utf-8')]
+			tx, h, w, by = faceBoxes[partialName]
 			img = img.crop((tx, h, w, by))
 			img.save(fullName)
 		except Exception, e:
@@ -54,7 +56,8 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 		dirPath = os.path.join(allImages, person)
 		faceList = sorted(os.listdir(dirPath))
 		for impath in faceList:
-			fullName = os.path.join(dirPath, impath)
+			fullName = os.path.join(dirPath, impath).decode('utf-8')
+			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
 			fileName = impath.rsplit('.', 1)[0]
 			try:
 				img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
@@ -88,7 +91,8 @@ def getRawTrainData(prefix, trainFolder, imageRes):
                 dirPath = os.path.join(allImages, person)
                 faceList = sorted(os.listdir(dirPath))
                 for impath in faceList:
-                        fullName = os.path.join(dirPath, impath)
+                        fullName = os.path.join(dirPath, impath).decode('utf-8')
+			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
                         fileName = impath.rsplit('.', 1)[0]
                         try:
                                 img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
@@ -119,6 +123,7 @@ def getAllTestData(prefix, trainFolder, imageRes, model):
 		faceList = sorted(os.listdir(dirPath))
 		for impath in faceList:
 			fullName = os.path.join(dirPath, impath)
+			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
 			fileName = impath.rsplit('.', 1)[0]
 			try:
 				img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
