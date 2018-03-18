@@ -1,9 +1,28 @@
 import numpy as np
 from PIL import Image
 import os
-from itertools import tee
 import cv2
 import re
+
+
+def lookupFile(fullPath):
+        stupidString = '\xef\xbb\xbf'
+        directory, fileName = fullPath.rsplit('/', 1)
+        modifiedName, extension = fileName.rsplit('.', 1)
+        if os.path.exists(fullPath):
+                return fullPath
+        elif os.path.exists(os.path.join(directory + stupidString, modifiedName) + "." + extension):
+                return os.path.join(directory + stupidString, modifiedName) + "." + extension
+        elif os.path.exists(os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension):
+                return os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension
+        elif os.path.exists(os.path.join(directory, modifiedName + stupidString) + "." + extension):
+                return os.path.join(directory, modifiedName + stupidString) + "." + extension
+        elif os.path.exists(os.path.join(directory, " " + modifiedName) + "." + extension):
+                return os.path.join(directory, " " + modifiedName) + "." + extension
+        else:
+                print fullPath
+                print os.listdir(directory)
+                return None
 
 
 def cropImages(prefix, dirPath, faceBoxes):
@@ -11,9 +30,9 @@ def cropImages(prefix, dirPath, faceBoxes):
 	i = 0
 	for imPath in imagesBefore:
 		try:
-			partialName = os.path.join(dirPath, imPath).decode('utf-8').replace('\xef\xbb\xbf', '')
-			fullName = os.path.join(prefix, partialName).decode('utf8')
-			fullName =  re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
+			partialName = os.path.join(dirPath, imPath)
+			fullName = os.path.join(prefix, partialName)
+			fullName =  lookupFile(re.sub(r"[/]\s", "/", fullName))
 			img = Image.open(fullName).convert('RGB')
 			tx, h, w, by = faceBoxes[partialName]
 			img = img.crop((tx, h, w, by))
@@ -21,7 +40,7 @@ def cropImages(prefix, dirPath, faceBoxes):
 		except Exception, e:
 			os.remove(fullName)
 			i += 1
-			print(fullName.decode('utf8'))
+			print(e)
 	return i
 
 
@@ -56,11 +75,11 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 		dirPath = os.path.join(allImages, person)
 		faceList = sorted(os.listdir(dirPath))
 		for impath in faceList:
-			fullName = os.path.join(dirPath, impath).decode('utf-8')
-			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
+			fullName = os.path.join(dirPath, impath)
+			fullName = re.sub(r"[/]\s", "/", fullName)
 			fileName = impath.rsplit('.', 1)[0]
 			try:
-				img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
+				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
 				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
 					print img.shape
 				if '_h_' in fileName:
@@ -91,11 +110,11 @@ def getRawTrainData(prefix, trainFolder, imageRes):
                 dirPath = os.path.join(allImages, person)
                 faceList = sorted(os.listdir(dirPath))
                 for impath in faceList:
-                        fullName = os.path.join(dirPath, impath).decode('utf-8')
-			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
+                        fullName = os.path.join(dirPath, impath)
+			fullName = re.sub(r"[/]\s", "/", fullName)
                         fileName = impath.rsplit('.', 1)[0]
                         try:
-                                img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
+                                img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
                                 if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
                                         print img.shape
                                 if '_h_' in fileName:
@@ -111,36 +130,6 @@ def getRawTrainData(prefix, trainFolder, imageRes):
                         X_plain.append(np.stack(X_person_normal))
         assert(len(X_plain) == len(X_dig)) # 1 validation & 1 training sample per person
         return (X_plain, X_dig)
-
-
-def getAllTestData(prefix, trainFolder, imageRes, model):
-	allImages = os.path.join(prefix, trainFolder)
-	X = []
-	Y = []
-	personList = sorted(os.listdir(allImages))
-	for person_index, person in enumerate(personList):
-		dirPath = os.path.join(allImages, person)
-		faceList = sorted(os.listdir(dirPath))
-		for impath in faceList:
-			fullName = os.path.join(dirPath, impath)
-			fullName = re.sub(r"[/]\s", "/", fullName).replace('\xef\xbb\xbf', '')
-			fileName = impath.rsplit('.', 1)[0]
-			try:
-				img = cv2.resize(np.asarray(Image.open(fullName).convert('RGB'), dtype=np.float32), imageRes)
-				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print img.shape
-				X.append(img)
-				if '_h_' in fileName:
-					Y.append(person_index)
-				elif '_I_' in fileName:
-					Y.append(-person_index)
-				else:
-					Y.append(person_index)
-			except Exception, e:
-				print(e)
-	X = np.stack(X)
-	Y = np.stack(Y)
-	return (model.process(X), Y)
 
 
 def getNormalGenerator(X_imposter, batch_size):
@@ -176,35 +165,27 @@ def getImposterGenerator(X_plain, X_imposter, batch_size):
 							X_left, X_right, Y = [], [], []
 
 
-def getGenerator(X_plain, X_imposter, batch_size, val_ratio=0.2):
-	norGen = getNormalGenerator(X_plain, batch_size)
-	normImpGen = getNormalGenerator(X_imposter, batch_size)
-	impGen  = getImposterGenerator(X_plain, X_imposter, batch_size)
+def getGenerator(norGen, normImpGen, impGen, batch_size, type=0, val_ratio=0.2):
 	while True:
 		X1, Y1 = norGen.next()
 		X2, Y2 = normImpGen.next()
 		X3, Y3 = impGen.next()
 		Y = np.concatenate((Y1, Y2, Y2), axis=0)
 		X = [np.concatenate((X1[0], X2[0], X3[0]), axis=0), np.concatenate((X1[1], X2[1], X3[1]), axis=0)]
+		# Generate data in 1:1 ratio to avoid overfitting
+		Y_flat = np.stack([y[0] for y in Y])
+		pos = np.where(Y_flat == 1)[0]
+		neg = np.where(Y_flat == 0)[0]
+		minSamp = np.minimum(len(pos), len(neg))
+		# Don't train on totally biased data
+		if minSamp == 0:
+			continue
+		selectedIndices = np.concatenate((np.random.choice(pos, minSamp, replace=False), np.random.choice(neg, minSamp, replace=False)), axis=0)
+		Y = Y[selectedIndices]
+		X = [ x[selectedIndices] for x in X]
 		indices = np.random.permutation(len(Y))
 		splitPoint = int(len(Y) * val_ratio)
-		X_train, Y_train = [ x[indices[splitPoint:]] for x in X], Y[indices[splitPoint:]]
-		X_test, Y_test = [ x[indices[:splitPoint]] for x in X], Y[indices[:splitPoint]]
-		yield (X_train, Y_train), (X_test, Y_test)
-
-
-def splitGen(sourceGen, train):
-	for tuple in sourceGen:
-		if train:
-			yield tuple[0]
-		else:
-			yield tuple[1]
-
-
-def getTrainValGens(X_plain, X_imposter, batch_size, val_ratio=0.2):
-	dataGen1, dataGen2 = tee(getGenerator(X_plain, X_imposter, batch_size, val_ratio))
-	trainGen, valGen = splitGen(dataGen1, True), splitGen(dataGen1, False)
-	return trainGen, valGen
+		yield (X, Y)
 
 
 def splitDisguiseData(X_dig, pre_ratio=0.5):
@@ -247,7 +228,7 @@ def createMiniBatch(X_plain, X_dig):
 
 if __name__ == "__main__":
 	prefix = "DFW/DFW_Data/"
-	trainBoxesPath = prefix + "Testing_data_face_coordinate.txt"
+	trainBoxesPath = prefix + "Training_data_face_coordinate.txt"
 	boxMap = constructIndexMap(trainBoxesPath)
-	cropAllFolders(prefix, "Testing_data", boxMap)
+	#cropAllFolders(prefix, "Training_data", boxMap)
 	#getAllTrainData(prefix, "Training_data")

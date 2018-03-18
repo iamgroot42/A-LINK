@@ -65,6 +65,31 @@ class SiameseNetwork:
 			total += len(X_left)
 		return n_correct / float(total)
 
+	def customTrainModel(self, dataGen, epochs, batch_size, valRatio=0.2):
+		steps_per_epoch = 320000 / batch_size
+		for _ in range(epochs):
+			train_loss, val_loss = 0, 0
+	                train_acc, val_acc = 0, 0
+			for _ in tqdm(range(steps_per_epoch)):
+				x, y = dataGen.next()
+				# Split into train and val
+				indices = np.random.permutation(len(y))
+		                splitPoint = int(len(y) * valRatio)
+				x_train, y_train = [ pp[indices[splitPoint:]] for pp in x], y[indices[splitPoint:]]
+				x_test, y_test = [ pp[indices[:splitPoint]] for pp in x], y[indices[:splitPoint]]
+				train_metrics = self.siamese_net.train_on_batch(x_train, y_train)
+				train_loss += train_metrics[0]
+				train_acc += train_metrics[1]
+				val_metrics = self.siamese_net.test_on_batch(x_test, y_test)
+				val_loss += val_metrics[0]
+				val_acc += val_metrics[1]
+			train_loss /= steps_per_epoch
+			train_acc /= steps_per_epoch
+			val_loss /= steps_per_epoch
+			val_acc /= steps_per_epoch
+			print("Training loss, accuracy: %f, %f" % (train_loss, train_acc))
+			print("Validation loss, accuracy: %f, %f" % (val_loss, val_acc))
+			
 	def maybeLoadFromMemory(self):
 		try:
 			self.siamese_net.load_weights(self.modelName + ".h5")

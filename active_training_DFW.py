@@ -49,7 +49,6 @@ if __name__ == "__main__":
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
 	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
-	(X_test, Y_test) = readDFW.getAllTestData(FLAGS.dataDirPrefix, FLAGS.testImagesDir, IMAGERES, conversionModel)
 
 	# Split X_dig person-wise for pretraining & framework data
 	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
@@ -63,9 +62,22 @@ if __name__ == "__main__":
 	bag = committee.Bagging(ensemble, ensembleNoise)
 	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "disguisedModel", 0.1)
 	
+	# Create generators
+	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
+	disgGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
+	normImpGen = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
+	impGenNorm  = readDFW.getImposterGenerator(X_plain, X_imp, FLAGS.batch_size)
+	impGenDisg = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
+
+
+	dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
+	disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
+	exit()
+
 	# Finetune disguised-faces model
 	if not disguisedFacesModel.maybeLoadFromMemory():
-		trainDatagen, valDatagen = readDFW.getTrainValGens(X_dig_pre, X_imp, FLAGS.batch_size, 0.2)
+		trainDatagen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
+		valDatagen = None
 		disguisedFacesModel.trainModel(trainDatagen, valDatagen, FLAGS.dig_epochs, FLAGS.batch_size, verbose=1)
 		disguisedFacesModel.save()
 		print('Finetuned disguised-faces model')
@@ -75,14 +87,11 @@ if __name__ == "__main__":
 	# Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
 		if not individualModel.maybeLoadFromMemory():
-			trainDatagen, valDatagen = readDFW.getTrainValGens(X_plain, X_imp, FLAGS.batch_size, 0.2)
+			trainDatagen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
+			valDatagen = None
 			individualModel.trainModel(trainDatagen, valDatagen, FLAGS.undig_epochs, FLAGS.batch_size, verbose=1)
 			individualModel.save()
 	print('Finetuned undisguised-faces models')
-
-	# Calculate accuracy of disguised-faces model at this stage
-	# Too effing slow rn :|
-	# print('Disguised model test accuracy:', disguisedFacesModel.testAccuracy(X_test, Y_test))
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_x = np.array([])
@@ -165,5 +174,3 @@ if __name__ == "__main__":
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
-	# Final test accuracy of disguised-faces model
-	print("Disguised Face Test Accuracy", disguisedFacesModel.testAccuracy(X_test, Y_test))

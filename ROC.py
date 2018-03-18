@@ -27,8 +27,7 @@ Genuine_score= []
 Imposter_score= []
 for i in range(7771):
     z=i+1
-    for j in range(z,7771):
-        
+    for j in range(z,7771):        
         if masked_matrix[i][j] == 1:
             Genuine_score.append(score_matrix[i][j])
         elif masked_matrix[i][j] == 2:
