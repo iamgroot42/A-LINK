@@ -32,6 +32,16 @@ def one_hot(Y, n_classes):
 	y_[np.arange(len(Y)), Y] = 1
 	return y_
 
+# Change from [0,1] value to 0/1 value:
+def roundoff(Y):
+	y_ = []
+	for y in Y:
+		if y >= 0.5:
+			y_.append([1])
+		else:
+			y_.append([0])
+	return np.stack(y_)
+
 # Convert from classnames into one-hot
 def names_to_onehot(Y, mapping):
 	Y_ = [ mapping[x] for x in Y]

@@ -2,6 +2,15 @@ import siamese
 from tqdm import tqdm
 import numpy as np
 
+import tensorflow as tf
+import keras
+
+# Don't hog GPU
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
+keras.backend.set_session(sess)
+
 
 if __name__ == "__main__":
 	disguisedFacesModel = siamese.SiameseNetwork((2048,), "disguisedModel", 0.1)

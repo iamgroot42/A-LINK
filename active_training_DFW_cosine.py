@@ -1,7 +1,7 @@
-import readDFW
+import readDFW_cosine
 import itertools
 import committee
-import siamese
+import siamese_cosine
 import noise
 import helpers
 
@@ -43,24 +43,20 @@ flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed example
 
 
 if __name__ == "__main__":
-	# Define image featurization model
-	conversionModel = siamese.RESNET50(IMAGERES)
 
-	# Load images, convert to feature vectors for faster processing
-	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
-	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
+	# Load images
+	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 
 	# Split X_dig person-wise for pretraining & framework data
-	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
-	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
+	(X_dig_pre, X_dig_post) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "ensemble1", 0.1)]
+	ensemble = [siamese_cosine.FaceVGG16(FEATURERES, "ensemble1_cosine", 0.1)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "disguisedModel", 0.1)
+	disguisedFacesModel = siamese.FaceVGG16(FEATURERES, "disguisedModel_cosine", 0.1)
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
@@ -86,9 +82,6 @@ if __name__ == "__main__":
 			individualModel.save()
 	print('Finetuned undisguised-faces models')
 
-	# Temporary
-	exit()
-
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_left_x = np.array([])
 	train_df_right_x = np.array([])
@@ -102,24 +95,18 @@ if __name__ == "__main__":
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 	for ii in range(0, len(X_dig_post), FRAMEWORK_BS):
 		print( (ii / FRAMEWORK_BS) + 1, "iteration")
-		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
+		plain_part = X_plain[ii: ii + FRAMEWORK_BS]
 		disguise_part = X_dig_post[ii: ii + FRAMEWORK_BS]
 
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
 		UN_SIZE += len(batch_x[0])
 
-		# Get featurized faces to be passed to committee
-		batch_x_features = [ conversionModel.process(p) for p in batch_x]
-
 		# Get predictions made by committee
-		ensemblePredictions = bag.predict(batch_x_features)
+		ensemblePredictions = bag.predict(batch_x)
 
 		# Get images with added noise
 		noisy_data = [ bag.attackModel(p, IMAGERES) for p in batch_x]
-
-		# Get features back from noisy images
-                noisy_data = [ conversionModel.process(p) for p in noisy_data ]
 
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
@@ -172,8 +159,8 @@ if __name__ == "__main__":
 				X_old_left = np.concatenate((X_old_left, X_old_temp[0]))
 				X_old_right = np.concatenate((X_old_right, X_old_temp[1]))
 				Y_old = np.concatenate((Y_old, Y_old_temp))
-			train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices], X_old_left))
-			train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices], X_old_right))
+			train_df_left_x = np.concatenate((train_df_left_x, batch_x[0][queryIndices], X_old_left))
+			train_df_right_x = np.concatenate((train_df_right_x, batch_x[1][queryIndices], X_old_right))
 			train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
 			# Use a lower learning rate for finetuning ?
 			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, 3, 16, 1)

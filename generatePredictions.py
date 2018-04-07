@@ -6,6 +6,14 @@ import cv2
 import siamese
 import re
 
+# Don't hog GPU
+import tensorflow as tf
+import keras
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True
+sess = tf.Session(config=config)
+keras.backend.set_session(sess)
+
 
 def lookupFile(fullPath):
 	stupidString = '\xef\xbb\xbf'

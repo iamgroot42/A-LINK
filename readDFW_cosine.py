@@ -142,9 +142,9 @@ def getNormalGenerator(X_imposter, batch_size):
 						X_left.append(x)
 						X_right.append(y)
 						if i == j:
-							Y.append([1])
-						else:
 							Y.append([0])
+						else:
+							Y.append([1])
 						if len(Y) == batch_size:
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
@@ -159,7 +159,7 @@ def getImposterGenerator(X_plain, X_imposter, batch_size):
 					for y in imposter:
 						X_left.append(x)
 						X_right.append(y)
-						Y.append([0])
+						Y.append([1])
 						if len(Y) == batch_size:
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
@@ -219,9 +219,9 @@ def createMiniBatch(X_plain, X_dig):
 					X_left.append(x)
 					X_right.append(y)
 					if i == j:
-						Y.append([1])
-					else:
 						Y.append([0])
+					else:
+						Y.append([1])
 	for i in range(len(X_dig)):
 		for j in range(len(X_dig)):
 			for x in X_dig[i]:
@@ -229,9 +229,9 @@ def createMiniBatch(X_plain, X_dig):
 					X_left.append(x)
 					X_right.append(y)
 					if i == j:
-						Y.append([1])
-					else:
 						Y.append([0])
+					else:
+						Y.append([1])
 	return [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 
 
