@@ -1,7 +1,7 @@
 from keras.losses import categorical_crossentropy
 from keras.engine import  Model
 from keras.models import Sequential, load_model
-from keras.layers import Flatten, Dense, Input, Activation, Dropout, Conv2D, MaxPooling2D, Lambda, Dot
+from keras.layers import Flatten, Dense, Input, Activation, Dropout, Conv2D, MaxPooling2D, Lambda, Dot, dot
 from keras_vggface.vggface import VGGFace
 from keras_vggface import utils
 from keras.optimizers import Adadelta, SGD, rmsprop
@@ -24,10 +24,15 @@ class SiameseNetwork:
 		self.modelName = modelName
 		left_input = Input(shape)
 		right_input = Input(shape)
-		encoded_l = self.model(left_input)
-		encoded_r = self.model(right_input)
+		finetune = Sequential()
+		finetune.add(Dense(512, activation='relu', input_shape=shape))
+		finetune.add(Dense(512, activation='sigmoid', input_shape=shape))
+		encoded_l = finetune(left_input)
+		encoded_r = finetune(right_input)
 		# Define Siamese Network using shared weights
-		prediction = Dot([encoded_l, encoded_r])
+		#cosine_layer = Lambda(lambda tensors: K.mean(K.l2_normalize(tensors[0], axis=-1) * K.l2_normalize(tensors[1], axis=-1), axis=-1, keepdims=True))
+		#prediction = cosine_layer([encoded_l, encoded_r])
+		prediction = dot([encoded_l, encoded_r], 1, normalize=True)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
@@ -45,7 +50,7 @@ class SiameseNetwork:
 		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
 		self.siamese_net.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop, reduce_lr])
 	
-	def testAccuracy(self, X, Y, batch_size=512):
+	def testAccuracy(self, X, Y, batch_size=32):
 		n_correct, total = 0, 0
 		X_left, X_right, Y_send = [], [], []
 		for i, x in enumerate(X):
@@ -108,15 +113,12 @@ class SiameseNetwork:
 		return self.siamese_net.predict(self.preprocess(X))
 
 
-class FaceVGG16(SiameseNetwork, object):
-	def __init__(self, shape, modelName, learningRate=1.0):
+class FaceVGG16:
+	def __init__(self, shape):
 		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=shape + (3,))
 		last_layer = vgg_model.get_layer('pool5').output
-		x = Flatten(name='flatten')(last_layer)
-		x = Dense(512, activation='relu')(x)
-		out = Dense(512, activation='relu')(x)
+		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
-		super(FaceVGG16, self).__init__(shape, modelName, learningRate=1.0)
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)
@@ -126,15 +128,12 @@ class FaceVGG16(SiameseNetwork, object):
 		return self.model.predict(self.preprocess(X))
 
 
-class RESNET50(SiameseNetwork, object):
-	def __init__(self, shape, modelName, learningRate=1.0):
+class RESNET50:
+	def __init__(self, shape):
 		vgg_model = VGGFace(model='resnet50', include_top=False, input_shape=shape + (3,))
 		last_layer = vgg_model.get_layer('avg_pool').output
-		x = Flatten(name='flatten')(last_layer)
-		x = Dense(512, activation='relu')(x)
-		out = Dense(512, activation='relu')(x)
+		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
-		super(RESNET50, self).__init__(shape, modelName, learningRate=1.0)
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)

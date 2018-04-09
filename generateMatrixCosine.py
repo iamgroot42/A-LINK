@@ -1,4 +1,4 @@
-import siamese
+import siamese_cosine
 from tqdm import tqdm
 import numpy as np
 
@@ -14,7 +14,7 @@ keras.backend.set_session(sess)
 
 if __name__ == "__main__":
 	import sys
-	disguisedFacesModel = siamese.SiameseNetwork((2048,), sys.argv[1], 0.1)
+	disguisedFacesModel = siamese_cosine.SiameseNetwork((2048,), sys.argv[1], 1.0)
 	disguisedFacesModel.maybeLoadFromMemory()
 	features = np.load("processeData.npy")
 	scores = []
@@ -24,8 +24,8 @@ if __name__ == "__main__":
 		for x in features:
 			X_left.append(features[i])
 			X_right.append(x)
-		numbers = [ out[0] for out in disguisedFacesModel.predict([np.stack(X_left), np.stack(X_right)])]
+		numbers = [ 1 - out[0] for out in disguisedFacesModel.predict([np.stack(X_left), np.stack(X_right)])]
 		scores.append(numbers)
 	scores = np.stack(scores)
-	np.savetxt('TestScores_2.out', scores)
+	np.savetxt('TestScores.out', scores)
 

@@ -13,7 +13,8 @@ from sklearn.metrics import roc_curve
 
 #Score matrix of dimension 7771 x 7771 obtained on test set containing similarity scores following the same format as the masked matrix
 #Replace the name with the name of your score file.
-score_matrix = np.loadtxt('TestScores_2.out', dtype=float) # matrix containing similarity scores
+score_matrix = np.loadtxt('TestScores.out', dtype=float) # matrix containing similarity scores
+score_matrix = 1. - score_matrix
 
 #Testing_data_combine_mask_matrix.txt is the provided mask matrix. Give path of the mask matrix.  
 masked_matrix = np.loadtxt('testingMaskMatrix.txt', dtype=int) # load the mask matrix

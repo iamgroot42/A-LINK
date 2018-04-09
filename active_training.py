@@ -27,7 +27,6 @@ keras.backend.set_session(sess)
 HIGHRES = (224, 224)
 DATARES = (150, 150)
 LOWRES = (32, 32)
-N_CLASSES = 337
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
@@ -54,11 +53,6 @@ if __name__ == "__main__":
 	# Load low-resolution data
 	(X_low_train, Y_low_train), (X_low_val, Y_low_val), lowMap = load_data.resizeLoadDataAll(FLAGS.imagesDir, FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES) 
 
-	# Get mappings from classnames to softmax indices
-	highMap = highgenVal.class_indices
-	highMapinv = {v: k for k, v in highMap.iteritems()}
-	lowMapinv =  {v: k for k, v in lowMap.iteritems()}
-
 	#ensemble = [model.FaceVGG16(HIGHRES, N_CLASSES, 512), model.RESNET50(HIGHRES, N_CLASSES)]
 	ensemble = [model.RESNET50(HIGHRES, N_CLASSES)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
@@ -84,10 +78,6 @@ if __name__ == "__main__":
 		else:
 			print("Loaded", individualModel.modelName, "from memory")
 	print('Finetuned high-resolution models')
-
-	# Calculate accuracy of low-res model at this stage
-	testGen = load_data.testDataGenerator(FLAGS.imagesDir, FLAGS.testDataList, HIGHRES, LOWRES, 128)
-	print('Low-res model test accuracy:', helpers.calculate_accuracy(testGen, lowResModel, "low", lowMap, 1))
 	
 	# Train low res model only when batch length crosses threshold
 	train_lr_x = np.array([])

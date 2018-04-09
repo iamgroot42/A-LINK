@@ -47,27 +47,6 @@ def resize(images, new_size):
 	resized_images = resized_images.astype("float32")
 	return np.array(resized_images)
 
-# Test data generator
-def testDataGenerator(baseDir, imagePaths, highRes, lowRes, batch_size=128):
-	i = 0
-	X_low = []
-	X_high = []
-	Y = []
-	with open(imagePaths, 'r') as f:
-		for path in f:
-				properPath = os.path.join(baseDir, path.rstrip('\n'))
-				image = np.asarray(Image.open(properPath), dtype="int32")
-				X_low.append(imresize(image, lowRes))
-				X_high.append(imresize(image, highRes))
-				Y.append(path.split('_')[0])
-				i += 1
-				if i == batch_size:
-					yield np.array(X_low, dtype="float32"), np.array(X_high, dtype="float32"), np.array(Y)
-					i = 0
-					X_low = []
-					X_high = []
-					Y = []
-
 # Load data from memory, resized into desired shape
 def resizedLoadData(baseDir, imagesFolder, desiredRes):
 	X = []
@@ -82,22 +61,35 @@ def resizedLoadData(baseDir, imagesFolder, desiredRes):
 	return np.array(X), Y
 
 # Get generator for unlabelled data
-def getUnlabelledData(baseDir, imagePaths, batch_size=32):
-		i = 0
-		X = []
-		Y = []
-		with open(imagePaths, 'r') as f:
-			for path in f:
-				properPath = os.path.join(baseDir, path.rstrip('\n'))
-				image = np.asarray(Image.open(properPath), dtype="int32")
-				X.append(image)
-				Y.append(path.split('_')[0])
-				i += 1
-				if i ==  batch_size:
-					yield np.array(X), np.array(Y)
-					i = 0
-					X = []
-					Y = []
+def getUnlabelledData(baseDir, imagePaths, batch_size=8):
+	i = 0
+	X = []
+	Y = []
+	with open(imagePaths, 'r') as f:
+		for path in f:
+			properPath = os.path.join(baseDir, path.rstrip('\n'))
+			image = np.asarray(Image.open(properPath), dtype="int32")
+			X.append(image)
+			Y.append(path.split('_')[0])
+			i += 1
+			if i ==  batch_size:
+				yield np.array(X), np.array(Y)
+				i = 0
+				X = []
+				Y = []
+
+# Create pairs from images with person labels
+def labelToSiamese(X, Y):
+	X_left, X_right, Y_ = [], [], []
+	for i in range(len(Y)):
+		for j in range(i, len(Y)):
+			X_left.append(X[i])
+			X_right.append(X[j])
+			if Y[i] == Y[j]:
+				Y_.append([1])
+			else:
+				Y_.append([0])
+	return [X_left, X_right], Y_
 
 # Load train, val data from folders
 def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
@@ -108,3 +100,43 @@ def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
 	Y_train = np_utils.to_categorical([classMapping[x] for x in Y_train], len(uniqueClasses))
 	Y_val = np_utils.to_categorical([classMapping[x] for x in Y_val], len(uniqueClasses))
 	return (X_train, Y_train), (X_val, Y_val), classMapping
+
+# Combine data from train and val generators into a siamesestyle generator
+def combineGenSiam(gen1, gen2, conversionModel, batch_size):
+	X_left, X_right, Y_send = [], [], []
+	while True:
+		X1, Y1 = gen1.next()
+		X2, Y2 = gen2.next()
+		X1, X2 = conversionModel.process(X1), conversionModel.process(X2)
+		X, Y = np.concatenate((X1, X2), axis=0), np.concatenate((Y1, Y2), axis=0)
+		X_new_L, Xnew_R, Y_ = [], [], []
+		for i in range(len(Y)):
+			for j in range(i, len(Y)):
+				X_new_L.append(X[i])
+				X_new_R.append(X[j])
+				if np.argmax(Y[i]) == np.argmax(Y[j]):
+					Y_.append([1])
+				else:
+					Y_.append([0])
+		Y_flat = np.stack([y[0] for y in Y_])
+		pos = np.where(Y_flat == 1)[0]
+		neg = np.where(Y_flat == 0)[0]
+		minSamp = np.minimum(len(pos), len(neg))
+		# Don't train on totally biased data
+		if minSamp == 0:
+			continue
+		selectedIndices = np.concatenate((np.random.choice(pos, minSamp, replace=False), np.random.choice(neg, minSamp, replace=False)), axis=0)
+		Y_wow = Y_[selectedIndices]
+		X_wow = [X_new_L[selectedIndices], X_new_R[selectedIndices]]
+		if len(Y_send) > 0:
+			X_left = np.concatenate((X_left, X_wow[0]), axis=0)
+			X_right = np.concatenate((X_right, X_wow[1]), axis=0)
+			Y_send = np.concatenate((Y_send, Y_wow), axis=0)
+		else:
+			X_left = np.copy(X_wow[0])
+			X_right = np.copy(X_wow[1])
+			Y_send = np.copy(Y_wow)
+		if len(Y_send) >= batch_size:
+			yield ( [X_left, X_right], Y_send)
+			X_left, X_right, Y_send = [], [], []
+

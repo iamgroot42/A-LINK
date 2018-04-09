@@ -24,28 +24,45 @@ sess = tf.Session(config=config)
 keras.backend.set_session(sess)
 
 # Global
-IMAGERES = (224, 224)
+DATARES = (150, 150)
+HIGHRES = (224, 224)
+LOWRES = (32, 32)
 FEATURERES = (2048,)
 FRAMEWORK_BS = 16
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
-flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
-flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data imgaes')
+flags.DEFINE_string('imagesDir', 'data/', 'Path to all images')
+flags.DEFINE_string('lowResImagesDir', 'data_final/lowres/', 'Path to low-res images')
+flags.DEFINE_string('highResImagesDir', 'data_final/highres/', 'Path to high-res images')
+flags.DEFINE_string('unlabelledList', 'fileLists/unlabelledData.txt', 'Path to unlabelled images list')
+flags.DEFINE_string('testDataList', 'fileLists/testData.txt', 'Path to test images list')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
 flags.DEFINE_integer('dig_epochs', 50, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('undig_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_string('out_model', 'fineTuned', 'Name of model to be saved after finetuning')
 
 
 if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
+
+	# Initialize generator for unlabelled data
+	unlabelledImagesGenerator = load_data.getUnlabelledData(FLAGS.imagesDir, FLAGS.unlabelledList, FLAGS.batch_size)
+
+	# Initialize generator for high-resolution data
+	highgenTrain, highgenVal = load_data.returnGenerators(FLAGS.highResImagesDir + "train", FLAGS.highResImagesDir + "val", HIGHRES, 16, helpers.hr_preprocess)
+
+	# Get high-gen siamese generator from current generators
+	highgenSiam = load_data.combineGenSiam(highhenTrain, highgenVal, conversionModel, FLAGS.batch_size)
+
+	# Load low-resolution data
+	(X_low_train, Y_low_train), (X_low_val, Y_low_val) = load_data.resizeLoadDataAll(FLAGS.imagesDir, FLAGS.lowResImagesDir + "train", FLAGS.lowResImagesDir + "val", LOWRES)
+
+	# Done till here
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
@@ -56,8 +73,8 @@ if __name__ == "__main__":
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
 	ensemble = [siamese.SiameseNetwork(FEATURERES, "ensemble1", 0.1)]
-	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
-	ensembleNoise = [noise.Noise() for _ in ensemble]
+	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
@@ -86,6 +103,9 @@ if __name__ == "__main__":
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
 	print('Finetuned undisguised-faces models')
+
+	# Temporary
+	exit()
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_left_x = np.array([])
@@ -187,4 +207,4 @@ if __name__ == "__main__":
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
 	# Save retrained model
-	disguisedFacesModel.save(FLAGS.out_model)
+	disguisedFacesModel.save("fineTuned")
