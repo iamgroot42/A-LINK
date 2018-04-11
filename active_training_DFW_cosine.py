@@ -40,7 +40,8 @@ flags.DEFINE_integer('undig_epochs', 20, 'Number of epochs while fine-tuning und
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_float('learning_rate', 1, 'Learning rate')
+flags.DEFINE_float('learning_rate', 0.1, 'Learning rate')
+flags.DEFINE_string('out_model', 'models/fineTuned_cosine', 'Name of model to be saved after finetuning')
 
 
 if __name__ == "__main__":
@@ -55,13 +56,13 @@ if __name__ == "__main__":
 	(X_dig_pre, _) = readDFW_cosine.splitDisguiseData(X_dig, pre_ratio=0.5)
 	(_, X_dig_post) = readDFW_cosine.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
-	ensemble = [siamese_cosine.SiameseNetwork(FEATURERES, "ensemble1_cosine", FLAGS.learning_rate)]
+	ensemble = [siamese_cosine.SiameseNetwork(FEATURERES, "models/ensemble1_cosine", FLAGS.learning_rate)]
 	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese_cosine.SiameseNetwork(FEATURERES, "disguisedModel_cosine", FLAGS.learning_rate)
+	disguisedFacesModel = siamese_cosine.SiameseNetwork(FEATURERES, "models/disguisedModel_cosine", FLAGS.learning_rate)
 	
 	# Create generators
 	normGen = readDFW_cosine.getNormalGenerator(X_plain, FLAGS.batch_size)
@@ -187,4 +188,4 @@ if __name__ == "__main__":
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
 	# Save retrained model
-	disguisedFacesModel.save("fineTuned_c")
+	disguisedFacesModel.save(FLAGS.out_model)

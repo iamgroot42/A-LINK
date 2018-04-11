@@ -40,7 +40,7 @@ flags.DEFINE_integer('undig_epochs', 20, 'Number of epochs while fine-tuning und
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_string('out_model', 'fineTuned', 'Name of model to be saved after finetuning')
+flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 
 
 if __name__ == "__main__":
@@ -55,13 +55,13 @@ if __name__ == "__main__":
 	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "ensemble1", 0.1)]
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
 	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "disguisedModel", 0.1)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel", 0.1)
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)

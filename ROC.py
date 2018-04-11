@@ -6,6 +6,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 import  os
+import sys
 import numpy as np
 from sklearn import metrics
 import matplotlib.pyplot as plt
@@ -13,7 +14,7 @@ from sklearn.metrics import roc_curve
 
 #Score matrix of dimension 7771 x 7771 obtained on test set containing similarity scores following the same format as the masked matrix
 #Replace the name with the name of your score file.
-score_matrix = np.loadtxt('TestScores_2.out', dtype=float) # matrix containing similarity scores
+score_matrix = np.loadtxt(sys.argv[1], dtype=float) # matrix containing similarity scores
 
 #Testing_data_combine_mask_matrix.txt is the provided mask matrix. Give path of the mask matrix.  
 masked_matrix = np.loadtxt('testingMaskMatrix.txt', dtype=int) # load the mask matrix
@@ -66,5 +67,5 @@ plt.xscale('log')
 fig1 = plt.gcf()
 #plt.show() 
 #plt.draw()
-fig1.savefig("1000_point_ROC_case1",dpi=100) # change the name by which to save figure accordingly to your requirement
+fig1.savefig(sys.argv[2], dpi=100) # change the name by which to save figure accordingly to your requirement
 

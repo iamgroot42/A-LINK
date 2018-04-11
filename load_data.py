@@ -99,17 +99,28 @@ def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
 	classMapping = {y:x for x,y in enumerate(uniqueClasses)}
 	Y_train = np_utils.to_categorical([classMapping[x] for x in Y_train], len(uniqueClasses))
 	Y_val = np_utils.to_categorical([classMapping[x] for x in Y_val], len(uniqueClasses))
-	return (X_train, Y_train), (X_val, Y_val), classMapping
+	X_train = np.concatenate((X_train, X_val))
+	Y_train = np.concatenate((Y_train, Y_val))
+	return (X_train, Y_train)
+
+# Create generator from given data with class labels
+def dataToSiamGen(X, Y, batch_size):
+	while True:
+		for i in range(0, len(Y), batch_size):
+			yield X[i: i + batch_size], Y[i: i + batch_size]
 
 # Combine data from train and val generators into a siamesestyle generator
 def combineGenSiam(gen1, gen2, conversionModel, batch_size):
 	X_left, X_right, Y_send = [], [], []
 	while True:
 		X1, Y1 = gen1.next()
-		X2, Y2 = gen2.next()
-		X1, X2 = conversionModel.process(X1), conversionModel.process(X2)
-		X, Y = np.concatenate((X1, X2), axis=0), np.concatenate((Y1, Y2), axis=0)
-		X_new_L, Xnew_R, Y_ = [], [], []
+		if gen2:
+			X2, Y2 = gen2.next()
+			X1, X2 = conversionModel.process(X1), conversionModel.process(X2)
+			X, Y = np.concatenate((X1, X2), axis=0), np.concatenate((Y1, Y2), axis=0)
+		else:
+			X, Y = X1, Y1
+		X_new_L, X_new_R, Y_ = [], [], []
 		for i in range(len(Y)):
 			for j in range(i, len(Y)):
 				X_new_L.append(X[i])
@@ -126,6 +137,7 @@ def combineGenSiam(gen1, gen2, conversionModel, batch_size):
 		if minSamp == 0:
 			continue
 		selectedIndices = np.concatenate((np.random.choice(pos, minSamp, replace=False), np.random.choice(neg, minSamp, replace=False)), axis=0)
+		X_new_L, X_new_R, Y_ = np.stack(X_new_L), np.stack(X_new_R), np.stack(Y_)
 		Y_wow = Y_[selectedIndices]
 		X_wow = [X_new_L[selectedIndices], X_new_R[selectedIndices]]
 		if len(Y_send) > 0:

@@ -14,6 +14,8 @@ keras.backend.set_session(sess)
 
 if __name__ == "__main__":
 	import sys
+	if len(sys.argv) < 2:
+		print("python " + sys.argv[0] + " modelName outputFilePath")
 	disguisedFacesModel = siamese.SiameseNetwork((2048,), sys.argv[1], 0.1)
 	disguisedFacesModel.maybeLoadFromMemory()
 	features = np.load("processeData.npy")
@@ -27,5 +29,5 @@ if __name__ == "__main__":
 		numbers = [ out[0] for out in disguisedFacesModel.predict([np.stack(X_left), np.stack(X_right)])]
 		scores.append(numbers)
 	scores = np.stack(scores)
-	np.savetxt('TestScores_2.out', scores)
+	np.savetxt(sys.argv[2], scores)
 

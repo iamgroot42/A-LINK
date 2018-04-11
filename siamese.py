@@ -110,6 +110,44 @@ class SiameseNetwork:
 		return self.siamese_net.predict(self.preprocess(X))
 
 
+class SmallRes(SiameseNetwork, object):
+	def __init__(self, imageShape, featureShape, name, learningRate):
+		self.learningRate = learningRate
+		self.modelName = name
+		convnet = Sequential()
+		convnet.add(Conv2D(32, (3, 3), padding='same',
+					input_shape=imageShape))
+		convnet.add(Activation('relu'))
+		convnet.add(Conv2D(32, (3, 3)))
+		convnet.add(Activation('relu'))
+		convnet.add(MaxPooling2D(pool_size=(2, 2)))
+		convnet.add(Dropout(0.25))
+
+		convnet.add(Conv2D(64, (3, 3), padding='same'))
+		convnet.add(Activation('relu'))
+		convnet.add(Conv2D(64, (3, 3)))
+		convnet.add(Activation('relu'))
+		convnet.add(MaxPooling2D(pool_size=(2, 2)))
+		convnet.add(Dropout(0.25))
+
+		convnet.add(Flatten())
+		convnet.add(Dense(featureShape[0]))
+		convnet.add(Activation('relu'))
+		
+		left_input = Input(imageShape)
+		right_input = Input(imageShape)
+		encoded_l = convnet(left_input)
+		encoded_r = convnet(right_input)
+		L1_layer = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
+		L1_distance = L1_layer([encoded_l, encoded_r])
+		hidden = Dense(512, activation='relu')(L1_distance)
+		hidden2 = Dense(64, activation='relu')(hidden)
+		prediction = Dense(1, activation='sigmoid')(hidden2)
+		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
+		# Compile and prepare network
+		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
+
+
 class FaceVGG16:
 	def __init__(self, shape):
 		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=shape + (3,))
