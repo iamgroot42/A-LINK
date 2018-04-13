@@ -154,6 +154,7 @@ class FaceVGG16:
 		last_layer = vgg_model.get_layer('pool5').output
 		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
+		print self.model.output_shape
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)

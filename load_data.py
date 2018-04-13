@@ -89,7 +89,7 @@ def labelToSiamese(X, Y):
 				Y_.append([1])
 			else:
 				Y_.append([0])
-	return [X_left, X_right], Y_
+	return [np.stack(X_left), np.stack(X_right)], Y_
 
 # Load train, val data from folders
 def resizeLoadDataAll(baseDir, trainImagePaths, valImagePaths, desiredRes):
@@ -152,3 +152,20 @@ def combineGenSiam(gen1, gen2, conversionModel, batch_size):
 			yield ( [X_left, X_right], Y_send)
 			X_left, X_right, Y_send = [], [], []
 
+# Read test-data
+def testDataGenerator(baseDir, imagePaths, imageRes, batch_size=128):
+	i = 0
+	X = []
+	Y = []
+	with open(imagePaths, 'r') as f:
+		for path in f:
+			properPath = os.path.join(baseDir, path.rstrip('\n'))
+			image = np.asarray(Image.open(properPath), dtype="int32")
+			X.append(imresize(image, imageRes))
+			Y.append(path.split('_')[0])
+			i += 1
+			if i == batch_size:
+				yield np.array(X, dtype="float32"),  np.array(Y)
+				i = 0
+				X = []
+				Y = []

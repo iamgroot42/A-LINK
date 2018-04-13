@@ -43,6 +43,7 @@ flags.DEFINE_integer('low_epochs', 50, 'Number of epochs while training low-reso
 flags.DEFINE_integer('high_epochs', 20, 'Number of epochs while fine-tuning high-resolution model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
+flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 
 
 if __name__ == "__main__":
@@ -63,8 +64,8 @@ if __name__ == "__main__":
 	lowResSiamGen = load_data.combineGenSiam(load_data.dataToSiamGen(X_low, Y_low, 16), None, None, 16)
 
 	ensemble = [siamese.SiameseNetwork(FEATURERES, "ensemble1_multipie", 0.1)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
-	#ensembleNoise = [noise.Noise() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
         bag = committee.Bagging(ensemble, ensembleNoise)
@@ -104,7 +105,8 @@ if __name__ == "__main__":
 		batch_x_lr = load_data.resize(batch_x, LOWRES)
 
 		# Create pairs of images
-		batch_x_hr, batch_y = load_data.labelToSiamese(batch_x_hr, batch_y)
+		batch_x_hr, _ = load_data.labelToSiamese(batch_x_hr, batch_y)
+		batch_x_lr, batch_y = load_data.labelToSiamese(batch_x_lr, batch_y)
 		UN_SIZE += len(batch_x_hr[0])
 		
 		# Get featurized faces to be passed to committee
@@ -121,7 +123,7 @@ if __name__ == "__main__":
 
 		# Pick examples that were misclassified
 		misclassifiedIndices = []
-		for j in range(len(disguisedPredictions)):
+		for j in range(len(lowResPredictions)):
 			c1 = lowResPredictions[j][0] >= 0.5
 			c2 = ensemblePredictions[j][0] >= 0.5
 			if c1 != c2:
@@ -161,15 +163,16 @@ if __name__ == "__main__":
 		if train_lr_y.shape[0] >= FLAGS.batch_send:
 			# Finetune low-resolution model with this actively selected data points
 			# Also add unperturbed images to avoid overfitting on noise
-			batch_x_lr_siam, batch_y_lr_siam = load_data.labelToSiamese(batch_x_lr[queryIndices], batch_y)
-			train_lr_left_x = np.concatenate((train_lr_left_x, batch_x_lr_siam[0][queryIndices]))
-			train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_lr_siam[1][queryIndices]))
+			train_lr_left_x = np.concatenate((train_lr_left_x, batch_x_lr[0][queryIndices]))
+			train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_lr[1][queryIndices]))
 			train_lr_y = np.concatenate((train_lr_y, helpers.roundoff(intermediate)))
 			# Use a lower learning rate for finetuning ?
 			lowResModel.finetune([train_lr_left_x, train_lr_right_x], train_lr_y, 3, 16, 1)
 			train_df_left_x = np.array([])
 			train_df_right_x = np.array([])
 			train_df_y = np.array([])
+
+		print(FLAGS.active_ratio, UN_SIZE, (FRAMEWORK_BS-1), ACTIVE_COUNT)
 
 		# Stop algorithm if limit reached/exceeded
 		if int((FLAGS.active_ratio * UN_SIZE * (FRAMEWORK_BS - 1)) / 2) <= ACTIVE_COUNT:
@@ -179,4 +182,4 @@ if __name__ == "__main__":
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
 
 	# Save retrained model
-	lowResModel.save("fineTuned_multiPIE")
+	lowResModel.save(FLAGS.out_model)

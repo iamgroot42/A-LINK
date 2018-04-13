@@ -25,7 +25,8 @@ keras.backend.set_session(sess)
 
 # Global
 IMAGERES = (224, 224)
-FEATURERES = (2048,)
+#FEATURERES = (2048,)
+FEATURERES = (25088,)
 FRAMEWORK_BS = 16
 ACTIVE_COUNT = 0
 
@@ -35,17 +36,19 @@ flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data director
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data imgaes')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
-flags.DEFINE_integer('dig_epochs', 50, 'Number of epochs while training disguised-faces model')
-flags.DEFINE_integer('undig_epochs', 20, 'Number of epochs while fine-tuning undisguised-faces model')
+flags.DEFINE_integer('dig_epochs', 2, 'Number of epochs while training disguised-faces model')
+flags.DEFINE_integer('undig_epochs', 2, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
+flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
 
 
 if __name__ == "__main__":
 	# Define image featurization model
-	conversionModel = siamese.RESNET50(IMAGERES)
+	#conversionModel = siamese.RESNET50(IMAGERES)
+	conversionModel = siamese.FaceVGG16(IMAGERES)
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
@@ -55,13 +58,13 @@ if __name__ == "__main__":
 	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
-	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
-	ensembleNoise = [noise.Noise() for _ in ensemble]
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1_facenet", 0.1)]
+	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel", 0.1)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel_facenet", 0.1)
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
@@ -70,18 +73,29 @@ if __name__ == "__main__":
 	impGenNorm  = readDFW.getImposterGenerator(X_plain, X_imp, FLAGS.batch_size)
 	impGenDisg = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
 
-	# Finetune disguised-faces model
-	if not disguisedFacesModel.maybeLoadFromMemory():
+	# Train/Finetune disguised-faces model
+	if FLAGS.refine_models:
+		disguisedFacesModel.maybeLoadFromMemory()
+		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
+                disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
+                disguisedFacesModel.save()
+		print('Finetuned disguised-faces model')
+	elif not disguisedFacesModel.maybeLoadFromMemory():
 		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
 		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
 		disguisedFacesModel.save()
-		print('Finetuned disguised-faces model')
+		print('Trained disguised-faces model')
 	else:
 		print('Loaded disguised-faces model from memory')
 
-	# Finetune undisguised model(s), if not already trained
+	# Train/Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
-		if not individualModel.maybeLoadFromMemory():
+		if FLAGS.refine_models:
+			individualModel.maybeLoadFromMemory()
+			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
+                        individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
+                        individualModel.save()
+		elif not individualModel.maybeLoadFromMemory():
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()

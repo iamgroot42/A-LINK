@@ -86,7 +86,7 @@ if __name__ == "__main__":
 			dataGen = readDFW_cosine.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
-	print('Finetuned undisguised-faces models')
+		print('Finetuned undisguised-faces models')
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_left_x = np.array([])
