@@ -25,8 +25,8 @@ keras.backend.set_session(sess)
 
 # Global
 IMAGERES = (224, 224)
-#FEATURERES = (2048,)
-FEATURERES = (25088,)
+FEATURERES = (2048,)
+#FEATURERES = (25088,)
 FRAMEWORK_BS = 16
 ACTIVE_COUNT = 0
 
@@ -35,6 +35,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data imgaes')
+flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
 flags.DEFINE_integer('dig_epochs', 2, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('undig_epochs', 2, 'Number of epochs while fine-tuning undisguised-faces model')
@@ -43,12 +44,13 @@ flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled exampl
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
+flags.DEFINE_boolean('augment', False, 'Augmente data while finetuning covariate-based model?')
 
 
 if __name__ == "__main__":
 	# Define image featurization model
-	#conversionModel = siamese.RESNET50(IMAGERES)
-	conversionModel = siamese.FaceVGG16(IMAGERES)
+	conversionModel = siamese.RESNET50(IMAGERES)
+	#conversionModel = siamese.FaceVGG16(IMAGERES)
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
@@ -58,13 +60,13 @@ if __name__ == "__main__":
 	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1_facenet", 0.1)]
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel_facenet", 0.1)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel", 0.1)
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
@@ -184,11 +186,18 @@ if __name__ == "__main__":
 				X_old_left = np.concatenate((X_old_left, X_old_temp[0]))
 				X_old_right = np.concatenate((X_old_right, X_old_temp[1]))
 				Y_old = np.concatenate((Y_old, Y_old_temp))
-			train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices], X_old_left))
-			train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices], X_old_right))
-			train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
+			if FLAGS.augment:
+				batch_x_aug, batch_y_aug = helpers.augment_data([batch_x[0][queryIndices], batch_x[1][queryIndices]], helpers.roundoff(intermediate), 1)
+				batch_x_aug_features = [conversionModel.process(p) for p in batch_x_aug]
+				train_df_left_x = np.concatenate((train_df_left_x, batch_x_aug_features[0], X_old_left))
+				train_df_right_x = np.concatenate((train_df_right_x, batch_x_aug_features[1], X_old_right))
+				train_df_y = np.concatenate((train_df_y, batch_y_aug, Y_old))
+			else:
+				train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices], X_old_left))
+				train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices], X_old_right))
+				train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
 			# Use a lower learning rate for finetuning ?
-			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, 3, 16, 1)
+			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, FLAGS.ft_epochs, 16, 1)
 			train_df_left_x = np.array([])
 			train_df_right_x = np.array([])
 			train_df_y = np.array([])

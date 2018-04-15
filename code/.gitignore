@@ -1,0 +1,4 @@
+*.pyc
+models/*
+new_models/*
+DFW/*

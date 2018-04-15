@@ -1,8 +1,11 @@
 import matplotlib
 matplotlib.use('Agg')
+
 import matplotlib.pyplot as plt
+import tensorflow as tf
 import numpy as np
 from keras_vggface import utils
+from imgaug import augmenters as iaa
 
 
 # Plot confusion matrix
@@ -107,3 +110,32 @@ def unisonSplit(X, Y, leftRatio=0.4):
 	X_right, Y_right = X[indices[leftThreshold:]], Y[indices[leftThreshold:]]
 	return (X_left, Y_left), (X_right, Y_right)
 
+# Augment images with same transformations together
+def augment_data(dataset, dataset_labels, augementation_factor=1, use_random_rotation=True, use_random_shear=True, use_random_shift=True):
+	augmented_image_left = []
+	augmented_image_right = []
+	augmented_image_labels = []
+
+	for num in range (0, dataset[0].shape[0]):
+		for i in range(0, augementation_factor):
+			# original image:
+			augmented_image_left.append(dataset[0][num])
+			augmented_image_right.append(dataset[1][num])
+			augmented_image_labels.append(dataset_labels[num])
+
+			if use_random_rotation:
+				augmented_image_left.append(tf.contrib.keras.preprocessing.image.random_rotation(dataset[0][num], 20, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_right.append(tf.contrib.keras.preprocessing.image.random_rotation(dataset[1][num], 20, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_labels.append(dataset_labels[num])
+
+			if use_random_shear:
+				augmented_image_left.append(tf.contrib.keras.preprocessing.image.random_shear(dataset[0][num], 0.2, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_right.append(tf.contrib.keras.preprocessing.image.random_shear(dataset[1][num], 0.2, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_labels.append(dataset_labels[num])
+
+			if use_random_shift:
+				augmented_image_left.append(tf.contrib.keras.preprocessing.image.random_shift(dataset[0][num], 0.2, 0.2, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_right.append(tf.contrib.keras.preprocessing.image.random_shift(dataset[1][num], 0.2, 0.2, row_axis=0, col_axis=1, channel_axis=2))
+				augmented_image_labels.append(dataset_labels[num])
+
+	return [np.array(augmented_image_left), np.array(augmented_image_right)], np.array(augmented_image_labels)

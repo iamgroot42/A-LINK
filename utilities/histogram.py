@@ -28,9 +28,9 @@ for i in range(7771):
 print np.sort(Genuine_score), "genuine"
 print np.sort(Imposter_score), "imposter"
 
-plt.hist(Genuine_score, bins=20, range=(0.0, 1.0), label='Genuine', alpha=0.5)
-plt.hist(Imposter_score, bins=20, range=(0.0, 1.0), label='Imposter', alpha=0.5)
+plt.hist(Genuine_score, bins=100, range=(0.0, 1.0), label='Genuine', alpha=0.5)
+plt.hist(Imposter_score, bins=100, range=(0.0, 1.0), label='Imposter', alpha=0.5)
 plt.xscale('log')
 plt.yscale('log')
 plt.legend(loc='upper right')
-plt.savefig('Histogram.png')
+plt.savefig('Histogram.png', dpi=500)

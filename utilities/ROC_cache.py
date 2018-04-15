@@ -1,4 +1,3 @@
-# ROC genenration script : provided by DFW
 from __future__ import division
 from __future__ import print_function
 
@@ -21,9 +20,7 @@ masked_matrix = np.loadtxt('testingMaskMatrix.txt', dtype=int) # load the mask m
 
 #Threshold_weight.txt is provided - it contains the threshold values. Give path of the threshold file.
 Threshold_weight = np.loadtxt('thresholds.txt', dtype=float)
-#------------------------------------------------------------------------------------------------------------
 
-#case 3 Generating Genuine and Imposter score for Overall Accuracy
 Genuine_score= []
 Imposter_score= []
 for i in range(7771):
@@ -56,16 +53,6 @@ for i in range(len(Threshold_weight)):
     false_positive_rate.append(False_PR)
     True_PR=True_positive/len(Genuine_score)
     true_positive_rate.append(True_PR)
-print ('True_positive_rate and False_positive_rate generated')
 
-# plotting 1000 point ROC  
-plt.plot(false_positive_rate,true_positive_rate)
-plt.xlabel('False Positive Rate', fontsize=14)
-plt.ylabel('True Positive Rate', fontsize=14)
-plt.title("ROC Curve", fontsize=14)
-plt.xscale('log')
-fig1 = plt.gcf()
-#plt.show() 
-#plt.draw()
-fig1.savefig(sys.argv[2], dpi=100) # change the name by which to save figure accordingly to your requirement
 
+np.savetxt(sys.argv[2], np.array([true_positive_rate, false_positive_rate]))
