@@ -25,14 +25,14 @@ class Bagging:
 		return np.array(resized_images)
 
 	def attackModel(self, images, target_size):
-		#attackPairs = []
-		# bag_prediction = self.predict(images)
+		attackPairs = []
+		#bag_prediction = self.predict(images)
 		#for i, model in enumerate(self.models):
-			#X = self.attacks[i].addNoise(images)
-			#Y = model.predict(images)
-			#attackPairs.append((X, Y))
+		#	X = self.attacks[i].addNoise(images)
+		#	Y = model.predict(images)
+		#	attackPairs.append((X, Y))
 		# Heuristic to combine these attack sample points
-		# finalizedImages = []
-		# return self.resize(finalizedImages, target_size)
+		#finalizedImages = []
+		#return self.resize(finalizedImages, target_size)
 		return self.resize(self.attacks[0].addNoise(images), target_size)
 		#return self.attacks[0].addNoise(images)

@@ -1,21 +1,14 @@
-from keras.losses import categorical_crossentropy
 from keras.engine import  Model
-from keras.models import Sequential, load_model
+from keras.models import Sequential
 from keras.layers import Flatten, Dense, Input, Activation, Dropout, Conv2D, MaxPooling2D, Lambda
 from keras_vggface.vggface import VGGFace
 from keras_vggface import utils
-from keras.optimizers import Adadelta, SGD, rmsprop
+from keras.optimizers import Adadelta, rmsprop
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from keras.preprocessing.image import ImageDataGenerator
 from keras import backend as K
 
-from sklearn.utils import shuffle
-
 import numpy as np
-import cv2
-import helpers
 import sys
-from tqdm import tqdm
 
 
 class SiameseNetwork:

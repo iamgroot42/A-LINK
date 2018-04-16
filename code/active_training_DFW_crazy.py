@@ -27,7 +27,7 @@ keras.backend.set_session(sess)
 IMAGERES = (224, 224)
 FEATURERES = (2048,)
 #FEATURERES = (25088,)
-FRAMEWORK_BS = 16
+FRAMEWORK_BS = 8
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
@@ -56,39 +56,28 @@ if __name__ == "__main__":
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
 	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 
-	# Split X_dig person-wise for pretraining & framework data
-	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
-	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
+	# Set X_dig_post for finetuning second version of model
+	X_dig_post = X_dig_raw
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1), siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
+	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
+	#ensembleNoise = [noise.SaltPepper() for _ in ensemble]
+	ensembleNoise = [noise.Poisson() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian(), noise.SaltPepper()]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/disguisedModel", 0.1)
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, "models/ensemble1_backup", 0.1)
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
-	disgGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
 	normImpGen = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
 	impGenNorm  = readDFW.getImposterGenerator(X_plain, X_imp, FLAGS.batch_size)
-	impGenDisg = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
 
 	# Train/Finetune disguised-faces model
-	if FLAGS.refine_models:
-		disguisedFacesModel.maybeLoadFromMemory()
-		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
-                disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
-                disguisedFacesModel.save()
-		print('Finetuned disguised-faces model')
-	elif not disguisedFacesModel.maybeLoadFromMemory():
-		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
-		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
-		disguisedFacesModel.save()
-		print('Trained disguised-faces model')
-	else:
-		print('Loaded disguised-faces model from memory')
+	disguisedFacesModel.maybeLoadFromMemory()
+	print('Loaded disguised-faces model from memory')
 
 	# Train/Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
@@ -118,37 +107,35 @@ if __name__ == "__main__":
 		print( (ii / FRAMEWORK_BS) + 1, "iteration")
 		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
 		disguise_part = X_dig_post[ii: ii + FRAMEWORK_BS]
-
+		#print len(plain_part), len(disguise_part), len(plain_part[0]), len(disguise_part[0])
+		#print("Raw data batch loaded")
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
 		UN_SIZE += len(batch_x[0])
-
+		#print("Batch created")
 		# Get featurized faces to be passed to committee
 		batch_x_features = [ conversionModel.process(p) for p in batch_x]
-
+		#print("Features converted")
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
-
+		#print("Ensemble predicted")
 		# Get images with added noise
 		noisy_data = [ bag.attackModel(p, IMAGERES) for p in batch_x]
-
+		#print("Noise added")
 		# Get features back from noisy images
                 noisy_data = [ conversionModel.process(p) for p in noisy_data ]
-
+		#print("Noise features computed")
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
-		# Pick examples that were misclassified
+		# Pick examples that were misclassified (sort according to magnitde of change in score, pick top eighth)
 		misclassifiedIndices = []
 		for j in range(len(disguisedPredictions)):
-			c1 = disguisedPredictions[j][0] >= 0.5
-			c2 = ensemblePredictions[j][0] >= 0.5
-			print disguisedPredictions[j][0], ensemblePredictions[j][0]
-			if c1 != c2:
-				misclassifiedIndices.append(j)
-		exit()
-
-		# Query oracle, pick examples for which ensemble was right
+			c1 = disguisedPredictions[j][0]
+			c2 = ensemblePredictions[j][0]
+			misclassifiedIndices.append(-np.absolute(c1 - c2))
+		misclassifiedIndices = np.argsort(misclassifiedIndices)[:len(misclassifiedIndices) / 4]
+		# Query oracle, pick examples for which ensemble was (crudely) right
 		queryIndices = []
 		for j in misclassifiedIndices:
 			c1 = ensemblePredictions[j][0] >= 0.5

@@ -61,8 +61,9 @@ if __name__ == "__main__":
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
 	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
+	ensembleNoise = [noise.SaltPepper() for _ in ensemble]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
@@ -138,17 +139,15 @@ if __name__ == "__main__":
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
-		# Pick examples that were misclassified
+		# Pick examples that were misclassified (sort according to magnitde of change in score, pick top eighth)
 		misclassifiedIndices = []
 		for j in range(len(disguisedPredictions)):
-			c1 = disguisedPredictions[j][0] >= 0.5
-			c2 = ensemblePredictions[j][0] >= 0.5
-			print disguisedPredictions[j][0], ensemblePredictions[j][0]
-			if c1 != c2:
-				misclassifiedIndices.append(j)
-		exit()
+			c1 = disguisedPredictions[j][0]
+			c2 = ensemblePredictions[j][0]
+			misclassifiedIndices.append(-np.absolute(c1 - c2))
+		misclassifiedIndices = np.argsort(misclassifiedIndices)[:len(misclassifiedIndices) / 8]
 
-		# Query oracle, pick examples for which ensemble was right
+		# Query oracle, pick examples for which ensemble was (crudely) right
 		queryIndices = []
 		for j in misclassifiedIndices:
 			c1 = ensemblePredictions[j][0] >= 0.5
