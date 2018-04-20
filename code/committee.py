@@ -5,7 +5,7 @@ import numpy as np
 class Bagging:
 	def __init__(self, models, attacks):
 		self.models = models
-		assert(len(attacks) == len(self.models))
+		#assert(len(attacks) == len(self.models))
 		self.attacks = []
 		for attack in attacks:
 			self.attacks.append(attack)
@@ -34,5 +34,9 @@ class Bagging:
 		# Heuristic to combine these attack sample points
 		#finalizedImages = []
 		#return self.resize(finalizedImages, target_size)
+		#perturbed_images = []
+		#for attack in self.attacks:
+		#	perturbed_images.append(self.resize(attack.addNoise(images), target_size))
+		#return perturbed_images
 		return self.resize(self.attacks[0].addNoise(images), target_size)
 		#return self.attacks[0].addNoise(images)

@@ -13,6 +13,7 @@ import keras
 from keras_vggface import utils
 from tensorflow.python.platform import flags
 from sklearn.metrics import confusion_matrix
+from sets import Set
 
 # Set seed for reproducability
 tf.set_random_seed(42)
@@ -59,12 +60,13 @@ if __name__ == "__main__":
 	# Set X_dig_post for finetuning second version of model
 	X_dig_post = X_dig_raw
 
-	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1), siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
+	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
 	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
 	#ensembleNoise = [noise.SaltPepper() for _ in ensemble]
-	ensembleNoise = [noise.Poisson() for _ in ensemble]
-	#ensembleNoise = [noise.Gaussian(), noise.SaltPepper()]
+	#ensembleNoise = [noise.Poisson() for _ in ensemble]
+	#ensembleNoise = [noise.Speckle() for _ in ensemble]
+	ensembleNoise = [noise.Gaussian(), noise.SaltPepper(), noise.Poisson()]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
@@ -107,34 +109,51 @@ if __name__ == "__main__":
 		print( (ii / FRAMEWORK_BS) + 1, "iteration")
 		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
 		disguise_part = X_dig_post[ii: ii + FRAMEWORK_BS]
-		#print len(plain_part), len(disguise_part), len(plain_part[0]), len(disguise_part[0])
-		#print("Raw data batch loaded")
+
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
 		UN_SIZE += len(batch_x[0])
-		#print("Batch created")
+
 		# Get featurized faces to be passed to committee
 		batch_x_features = [ conversionModel.process(p) for p in batch_x]
-		#print("Features converted")
+
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
-		#print("Ensemble predicted")
+
 		# Get images with added noise
 		noisy_data = [ bag.attackModel(p, IMAGERES) for p in batch_x]
-		#print("Noise added")
-		# Get features back from noisy images
-                noisy_data = [ conversionModel.process(p) for p in noisy_data ]
-		#print("Noise features computed")
-		# Pass these to disguised-faces model, get predictions
-		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
-		# Pick examples that were misclassified (sort according to magnitde of change in score, pick top eighth)
+		# Get features back from noisy images
+                #noisy_data = [ conversionModel.process(p) for p in noisy_data ]
+
+		# Pass these to disguised-faces model, get predictions
+		#disguisedPredictions = disguisedFacesModel.predict(noisy_data)
+
+		noisy_data = [ [conversionModel.process(p) for p in part] for part in noisy_data]
+		#disguisedPredictions = [disguisedFacesModel.predict(nd) for nd in noisy_data]
+		disguisedPredictions = [disguisedFacesModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(3)] 
 		misclassifiedIndices = []
-		for j in range(len(disguisedPredictions)):
-			c1 = disguisedPredictions[j][0]
-			c2 = ensemblePredictions[j][0]
-			misclassifiedIndices.append(-np.absolute(c1 - c2))
-		misclassifiedIndices = np.argsort(misclassifiedIndices)[:len(misclassifiedIndices) / 4]
+		for dp in disguisedPredictions:
+			tortoise = []
+			for j in range(len(dp)):
+				c1 = dp[j][0]
+				c2 = ensemblePredictions[j][0]
+				tortoise.append(-np.absolute(c1 - c2))
+			tortoise = np.argsort(tortoise)[:len(tortoise) / 4]
+		misclassifiedIndices.append(tortoise)
+		turtle = Set(misclassifiedIndices[0])
+		for j in range(1, len(misclassifiedIndices)):
+			turtle = turtle & Set(sclassifiedIndices[j])
+		misclassifiedIndices = list(turtle)
+		#print("Intersection produced these many examples", len(misclassifiedIndices))
+		# Pick examples that were misclassified (sort according to magnitude of change in score, pick top eighth)
+		#misclassifiedIndices = []
+		#for j in range(len(disguisedPredictions)):
+		#	c1 = disguisedPredictions[j][0]
+		#	c2 = ensemblePredictions[j][0]
+		#	misclassifiedIndices.append(-np.absolute(c1 - c2))
+		#misclassifiedIndices = np.argsort(misclassifiedIndices)[:len(misclassifiedIndices) / 4]
+
 		# Query oracle, pick examples for which ensemble was (crudely) right
 		queryIndices = []
 		for j in misclassifiedIndices:
@@ -156,15 +175,29 @@ if __name__ == "__main__":
 			intermediate.append(ensemblePredictions[i][0])
 		intermediate = np.array(intermediate)
 
+		mp = int(0.3 * len(intermediate))
 		# Gather data to be sent to low res model for training
 		if train_df_y.shape[0] > 0:
-			train_df_left_x = np.concatenate((train_df_left_x, noisy_data[0][queryIndices]))
-			train_df_right_x = np.concatenate((train_df_right_x, noisy_data[1][queryIndices]))
-			train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate)))
+			#train_df_left_x = np.concatenate((train_df_left_x, noisy_data[0][queryIndices]))
+			#train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices]))
+			train_df_left_x = np.concatenate((train_df_left_x, noisy_data[0][0][queryIndices[:mp]], noisy_data[0][1][queryIndices[mp:2*mp]], noisy_data[0][2][queryIndices[2*mp:]]))
+			#train_df_right_x = np.concatenate((train_df_right_x, noisy_data[1][queryIndices]))
+			#train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices]))
+			train_df_right_x = np.concatenate((train_df_right_x, noisy_data[1][0][queryIndices[:mp]], noisy_data[1][1][queryIndices[mp:2*mp]], noisy_data[1][2][queryIndices[2*mp:]]))
+			#train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate)))
+			print len(queryIndices[:mp]), len(queryIndices[mp:2*mp]), len(queryIndices[2*mp:]), "X after"
+			train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate)[:mp], helpers.roundoff(intermediate)[mp:2*mp], helpers.roundoff(intermediate)[2*mp:]))
+			print len(helpers.roundoff(intermediate)[:mp]), len(helpers.roundoff(intermediate)[mp:2*mp]), len(helpers.roundoff(intermediate)[2*mp:]), "Y after"
 		else:
-			train_df_left_x = np.copy(noisy_data[0][queryIndices])
-			train_df_right_x = np.copy(noisy_data[1][queryIndices])
-			train_df_y = np.copy(helpers.roundoff(intermediate))
+			#train_df_left_x = np.copy(noisy_data[0][queryIndices])
+			#train_df_left_x = np.copy(batch_x_features[0][queryIndices])
+			train_df_left_x = np.concatenate((noisy_data[0][0][queryIndices[:mp]], noisy_data[0][1][queryIndices[mp:2*mp]], noisy_data[0][2][queryIndices[2*mp:]]))
+			#train_df_right_x = np.copy(noisy_data[1][queryIndices])
+			train_df_right_x = np.concatenate((noisy_data[1][0][queryIndices[:mp]], noisy_data[1][1][queryIndices[mp:2*mp]], noisy_data[1][2][queryIndices[2*mp:]]))
+			#train_df_y = np.copy(helpers.roundoff(intermediate))
+			train_df_y = np.concatenate((helpers.roundoff(intermediate)[:mp], helpers.roundoff(intermediate)[mp:2*mp], helpers.roundoff(intermediate)[2*mp:]))
+			print len(queryIndices[:mp]), len(queryIndices[mp:2*mp]), len(queryIndices[2*mp:]), "X before"
+			print len(helpers.roundoff(intermediate)[:mp]), len(helpers.roundoff(intermediate)[mp:2*mp]), len(helpers.roundoff(intermediate)[2*mp:]), "Y before"
 
 		if train_df_y.shape[0] >= FLAGS.batch_send:
 			# Finetune disguised-faces model with this actively selected data points

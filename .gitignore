@@ -5,6 +5,7 @@ SmallRes
 *.h5
 *.out
 DFW/*
+new_scores/*
 
 # Data, Model files
 data*/*

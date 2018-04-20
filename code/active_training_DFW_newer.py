@@ -13,6 +13,7 @@ import keras
 from keras_vggface import utils
 from tensorflow.python.platform import flags
 from sklearn.metrics import confusion_matrix
+from sets import Set
 
 # Set seed for reproducability
 tf.set_random_seed(42)
@@ -40,7 +41,7 @@ flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelle
 flags.DEFINE_integer('dig_epochs', 2, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('undig_epochs', 2, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
-flags.DEFINE_float('active_ratio', 0.5, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
+flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
@@ -56,13 +57,18 @@ if __name__ == "__main__":
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
 	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 
-	# Split X_dig person-wise for pretraining & framework data
+	# Set X_dig_post for finetuning second version of model
+	#X_dig_post = X_dig_raw
 	(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=0.5)
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
 	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
 	ensembleNoise = [noise.Gaussian() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
+	#ensembleNoise = [noise.SaltPepper() for _ in ensemble]
+	#ensembleNoise = [noise.Poisson() for _ in ensemble]
+	#ensembleNoise = [noise.Speckle() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian(), noise.SaltPepper(), noise.Poisson()]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
@@ -70,25 +76,12 @@ if __name__ == "__main__":
 	
 	# Create generators
 	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
-	disgGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
 	normImpGen = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
 	impGenNorm  = readDFW.getImposterGenerator(X_plain, X_imp, FLAGS.batch_size)
-	impGenDisg = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
 
 	# Train/Finetune disguised-faces model
-	if FLAGS.refine_models:
-		disguisedFacesModel.maybeLoadFromMemory()
-		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
-                disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
-                disguisedFacesModel.save()
-		print('Finetuned disguised-faces model')
-	elif not disguisedFacesModel.maybeLoadFromMemory():
-		dataGen = readDFW.getGenerator(disgGen, normImpGen, impGenDisg, FLAGS.batch_size, 0)
-		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
-		disguisedFacesModel.save()
-		print('Trained disguised-faces model')
-	else:
-		print('Loaded disguised-faces model from memory')
+	disguisedFacesModel.maybeLoadFromMemory()
+	print('Loaded disguised-faces model from memory')
 
 	# Train/Finetune undisguised model(s), if not already trained
 	for individualModel in ensemble:
@@ -138,16 +131,31 @@ if __name__ == "__main__":
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = disguisedFacesModel.predict(noisy_data)
 
-		# Pick examples that were misclassified
+		#noisy_data = [ [conversionModel.process(p) for p in part] for part in noisy_data]
+		#disguisedPredictions = [disguisedFacesModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(3)] 
+		#misclassifiedIndices = []
+		#for dp in disguisedPredictions:
+		#	tortoise = []
+		#	for j in range(len(dp)):
+		#		c1 = dp[j][0]
+		#		c2 = ensemblePredictions[j][0]
+		#		tortoise.append(-np.absolute(c1 - c2))
+		#	tortoise = np.argsort(tortoise)[:len(tortoise) / 4]
+		#misclassifiedIndices.append(tortoise)
+		#turtle = Set(misclassifiedIndices[0])
+		#for j in range(1, len(misclassifiedIndices)):
+		#	turtle = turtle & Set(sclassifiedIndices[j])
+		#misclassifiedIndices = list(turtle)
+
+		# Pick examples that were misclassified (sort according to magnitude of change in score, pick top eighth)
 		misclassifiedIndices = []
 		for j in range(len(disguisedPredictions)):
-			c1 = disguisedPredictions[j][0] >= 0.5
-			c2 = ensemblePredictions[j][0] >= 0.5
-			#print disguisedPredictions[j][0], ensemblePredictions[j][0]
-			if c1 != c2:
-				misclassifiedIndices.append(j)
+			c1 = disguisedPredictions[j][0]
+			c2 = ensemblePredictions[j][0]
+			misclassifiedIndices.append(-np.absolute(c1 - c2))
+		misclassifiedIndices = np.argsort(misclassifiedIndices)[:len(misclassifiedIndices) / 4]
 
-		# Query oracle, pick examples for which ensemble was right
+		# Query oracle, pick examples for which ensemble was (crudely) right
 		queryIndices = []
 		for j in misclassifiedIndices:
 			c1 = ensemblePredictions[j][0] >= 0.5
@@ -168,15 +176,29 @@ if __name__ == "__main__":
 			intermediate.append(ensemblePredictions[i][0])
 		intermediate = np.array(intermediate)
 
+		mp = int(0.3 * len(intermediate))
 		# Gather data to be sent to low res model for training
 		if train_df_y.shape[0] > 0:
 			train_df_left_x = np.concatenate((train_df_left_x, noisy_data[0][queryIndices]))
+			#train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices]))
+			#train_df_left_x = np.concatenate((train_df_left_x, noisy_data[0][0][queryIndices[:mp]], noisy_data[0][1][queryIndices[mp:2*mp]], noisy_data[0][2][queryIndices[2*mp:]]))
 			train_df_right_x = np.concatenate((train_df_right_x, noisy_data[1][queryIndices]))
+			#train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices]))
+			#train_df_right_x = np.concatenate((train_df_right_x, noisy_data[1][0][queryIndices[:mp]], noisy_data[1][1][queryIndices[mp:2*mp]], noisy_data[1][2][queryIndices[2*mp:]]))
 			train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate)))
+			#print len(queryIndices[:mp]), len(queryIndices[mp:2*mp]), len(queryIndices[2*mp:]), "X after"
+			#train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate)[:mp], helpers.roundoff(intermediate)[mp:2*mp], helpers.roundoff(intermediate)[2*mp:]))
+			print len(helpers.roundoff(intermediate)[:mp]), len(helpers.roundoff(intermediate)[mp:2*mp]), len(helpers.roundoff(intermediate)[2*mp:]), "Y after"
 		else:
 			train_df_left_x = np.copy(noisy_data[0][queryIndices])
+			#train_df_left_x = np.copy(batch_x_features[0][queryIndices])
+			#train_df_left_x = np.concatenate((noisy_data[0][0][queryIndices[:mp]], noisy_data[0][1][queryIndices[mp:2*mp]], noisy_data[0][2][queryIndices[2*mp:]]))
 			train_df_right_x = np.copy(noisy_data[1][queryIndices])
+			#train_df_right_x = np.concatenate((noisy_data[1][0][queryIndices[:mp]], noisy_data[1][1][queryIndices[mp:2*mp]], noisy_data[1][2][queryIndices[2*mp:]]))
 			train_df_y = np.copy(helpers.roundoff(intermediate))
+			#train_df_y = np.concatenate((helpers.roundoff(intermediate)[:mp], helpers.roundoff(intermediate)[mp:2*mp], helpers.roundoff(intermediate)[2*mp:]))
+			#print len(queryIndices[:mp]), len(queryIndices[mp:2*mp]), len(queryIndices[2*mp:]), "X before"
+			#print len(helpers.roundoff(intermediate)[:mp]), len(helpers.roundoff(intermediate)[mp:2*mp]), len(helpers.roundoff(intermediate)[2*mp:]), "Y before"
 
 		if train_df_y.shape[0] >= FLAGS.batch_send:
 			# Finetune disguised-faces model with this actively selected data points
@@ -204,7 +226,7 @@ if __name__ == "__main__":
 			train_df_y = np.array([])
 
 		# Stop algorithm if limit reached/exceeded
-		if int(FLAGS.active_ratio * 31372) <= ACTIVE_COUNT:
+		if int((FLAGS.active_ratio * len(X_dig_post) * (FRAMEWORK_BS - 1)) / 2) <= ACTIVE_COUNT:
 			break
 
 	# Print count of images queried so far

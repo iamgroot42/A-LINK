@@ -6,11 +6,11 @@ matplotlib.use('Agg')
 
 import sys
 import numpy as np
-
 import matplotlib.pyplot as plt
+import os
 
-for input in sys.argv[1:-1]:
-	TPR, FPR = np.loadtxt(input)
+for input in os.listdir(sys.argv[1]):
+	TPR, FPR = np.loadtxt(os.path.join(sys.argv[1], input))
 	plt.plot(FPR, TPR,  label=input.split('/')[-1].rsplit('.', 1)[0])
 
 # Plot y=x line for random-reference

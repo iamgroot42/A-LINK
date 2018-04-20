@@ -18,7 +18,7 @@ class Noise(object):
 
 
 class Gaussian(Noise):
-	def __init__(self, mean=0, var=0.1):
+	def __init__(self, mean=10, var=10):
 		super(Gaussian, self).__init__()
 		self.mean = mean
 		self.var = var
@@ -69,7 +69,7 @@ class Speckle(Noise):
 
 	def addIndividualNoise(self, image):
 		row, col, ch = image.shape
-		gauss = np.random.randn(row, col, ch)
+		gauss = np.random.randn(row, col, ch) / 15
 		gauss = gauss.reshape(row, col, ch)        
 		noisy = image + image * gauss
 		return noisy

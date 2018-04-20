@@ -40,7 +40,6 @@ flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelle
 flags.DEFINE_integer('dig_epochs', 2, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('undig_epochs', 2, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
-flags.DEFINE_float('active_ratio', 0.5, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
@@ -114,6 +113,11 @@ if __name__ == "__main__":
 	# Framework begins
 	print("Framework begins with a pool of", len(X_dig_post))
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
+
+	# Save  models for different values of active ratio
+	active_values = [0.1, 0.25, 0.5, 0.75, 1]
+	active_index = 0
+
 	for ii in range(0, len(X_dig_post), FRAMEWORK_BS):
 		print( (ii / FRAMEWORK_BS) + 1, "iteration")
 		plain_part = X_plain_raw[ii: ii + FRAMEWORK_BS]
@@ -203,12 +207,11 @@ if __name__ == "__main__":
 			train_df_right_x = np.array([])
 			train_df_y = np.array([])
 
+		print("Check if %d less than %d" % (int(active_values[active_index] * 31372), ACTIVE_COUNT))
 		# Stop algorithm if limit reached/exceeded
-		if int(FLAGS.active_ratio * 31372) <= ACTIVE_COUNT:
-			break
-
-	# Print count of images queried so far
-	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)
-
-	# Save retrained model
-	disguisedFacesModel.save(FLAGS.out_model)
+		if int(active_values[active_index] * 31372) <= ACTIVE_COUNT:
+			disguisedFacesModel.save(FLAGS.out_model + str(100 * active_values[active_index]))
+			print("Saved for ratio %f" % active_values[active_ratio])
+			active_index += 1
+			if active_index >= len(active_values):
+				break
