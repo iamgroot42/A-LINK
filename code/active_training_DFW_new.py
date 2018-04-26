@@ -42,7 +42,7 @@ flags.DEFINE_integer('dig_epochs', 2, 'Number of epochs while training disguised
 flags.DEFINE_integer('undig_epochs', 2, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
-flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
+flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_string('out_model', 'models/fineTuned', 'Name of model to be saved after finetuning')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
 flags.DEFINE_boolean('augment', False, 'Augmente data while finetuning covariate-based model?')
@@ -135,18 +135,22 @@ if __name__ == "__main__":
 		for dp in disguisedPredictions:
 			tortoise = []
 			for j in range(len(dp)):
-				c1 = dp[j][0]
-				c2 = ensemblePredictions[j][0]
+				c1 = dp[j][0] #>= 0.5
+				c2 = ensemblePredictions[j][0] #>= 0.5
+				#if c1 != c2:
+				#	tortoise.append(j)
 				tortoise.append(-np.absolute(c1 - c2))
-			tortoise = np.argsort(tortoise)[:len(tortoise) / 4]
-		misclassifiedIndices.append(tortoise)
+			tortoise = np.argsort(tortoise)[:len(tortoise) / 8]
+			misclassifiedIndices.append(tortoise)
+			#print(tortoise)
 		turtle = Set(misclassifiedIndices[0])
 		for j in range(1, len(misclassifiedIndices)):
-			turtle = turtle & Set(sclassifiedIndices[j])
+			turtle = turtle & Set(misclassifiedIndices[j])
 		misclassifiedIndices = list(turtle)
+		print(misclassifiedIndices)
 
 		# Pick examples that were misclassified (sort according to magnitude of change in score, pick top eighth)
-		misclassifiedIndices = []
+		#misclassifiedIndices = []
 		#for j in range(len(disguisedPredictions)):
 		#	c1 = disguisedPredictions[j][0]
 		#	c2 = ensemblePredictions[j][0]
@@ -224,8 +228,8 @@ if __name__ == "__main__":
 			train_df_y = np.array([])
 
 		# Stop algorithm if limit reached/exceeded
-		if int((FLAGS.active_ratio * len(X_dig_post) * (FRAMEWORK_BS - 1)) / 2) <= ACTIVE_COUNT:
-			break
+		#if int((FLAGS.active_ratio * len(X_dig_post) * (FRAMEWORK_BS - 1)) / 2) <= ACTIVE_COUNT:
+		#	break
 
 	# Print count of images queried so far
 	print("Active Count:", ACTIVE_COUNT, "out of:", UN_SIZE)

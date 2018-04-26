@@ -60,7 +60,9 @@ if __name__ == "__main__":
 	(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=0.5)
 
 	ensemble = [siamese.SiameseNetwork(FEATURERES, "models/ensemble1", 0.1)]
-	ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Gaussian() for _ in ensemble]
+	#ensembleNoise = [noise.Speckle() for _ in ensemble]
+	ensembleNoise = [noise.SaltPepper() for _ in ensemble]
 	#ensembleNoise = [noise.Noise() for _ in ensemble]
 
 	# Ready committee of models
@@ -207,11 +209,14 @@ if __name__ == "__main__":
 			train_df_right_x = np.array([])
 			train_df_y = np.array([])
 
-		print("Check if %d less than %d" % (int(active_values[active_index] * 31372), ACTIVE_COUNT))
+		#print("Check if %d less than %d" % (int(active_values[active_index] * 31372), ACTIVE_COUNT))
 		# Stop algorithm if limit reached/exceeded
-		if int(active_values[active_index] * 31372) <= ACTIVE_COUNT:
-			disguisedFacesModel.save(FLAGS.out_model + str(100 * active_values[active_index]))
-			print("Saved for ratio %f" % active_values[active_ratio])
-			active_index += 1
-			if active_index >= len(active_values):
-				break
+		#if int(active_values[active_index] * 31372) <= ACTIVE_COUNT:
+		#	disguisedFacesModel.save(FLAGS.out_model + str(100 * active_values[active_index]))
+		#	print("Saved for ratio %f" % active_values[active_ratio])
+		#	active_index += 1
+		#	if active_index >= len(active_values):
+		#		break
+
+	print("Used %d out of 31372" % (ACTIVE_COUNT))
+	disguisedFacesModel.save(FLAGS.out_model)

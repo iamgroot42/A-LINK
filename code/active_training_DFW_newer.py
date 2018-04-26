@@ -141,7 +141,7 @@ if __name__ == "__main__":
 		#		c2 = ensemblePredictions[j][0]
 		#		tortoise.append(-np.absolute(c1 - c2))
 		#	tortoise = np.argsort(tortoise)[:len(tortoise) / 4]
-		#misclassifiedIndices.append(tortoise)
+		#	misclassifiedIndices.append(tortoise)
 		#turtle = Set(misclassifiedIndices[0])
 		#for j in range(1, len(misclassifiedIndices)):
 		#	turtle = turtle & Set(sclassifiedIndices[j])
