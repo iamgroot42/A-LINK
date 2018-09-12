@@ -41,7 +41,7 @@ flags.DEFINE_string('disguised_basemodel', 'WACV_models/disguisedModel', 'Name f
 flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson', 'Prefix for ensemble models')
 
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
-flags.DEFINE_integer('batch_size', 64, 'Batch size while sampling from unlabelled data')
+flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
 flags.DEFINE_integer('dig_epochs', 40, 'Number of epochs while training disguised-faces model')
 flags.DEFINE_integer('undig_epochs', 60, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
@@ -49,12 +49,12 @@ flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed example
 flags.DEFINE_integer('idkal_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
 
-flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be qurried for labels')
+flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
 flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
 flags.DEFINE_float('disparity_ratio', 0.25, 'What percentage of data to pick to pass on to oracle')
 flags.DEFINE_float('eps', 0.1, 'Region around equiboundary for even considering querying the oracle')
 
-flags.DEFINE_boolean('augment', False, 'Augmente data while finetuning covariate-based model?')
+flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
 flags.DEFINE_boolean('train_disguised_model', False, 'Train disguised-face model? (quits after training)')
 flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
@@ -87,7 +87,6 @@ if __name__ == "__main__":
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
 	ensembleNoise = [noise.get_relevant_noise(x)() for x in desired_noises]
-	ensembleNoise = [noise.Gaussian(), noise.SaltPepper(), noise.Poisson()]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
@@ -139,7 +138,7 @@ if __name__ == "__main__":
 	print("Framework beginning with a pool of %d" % (len(X_dig_post)))
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 	for ii in range(0, len(X_dig_post), FLAGS.idkal_bs):
-		print("Iteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
+		print("\nIteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
 		plain_part = X_plain_raw[ii: ii + FLAGS.idkal_bs]
 		disguise_part = X_dig_post[ii: ii + FLAGS.idkal_bs]
 
@@ -167,20 +166,20 @@ if __name__ == "__main__":
 		for dp in disguisedPredictions:
 			disparities = []
 			for j in range(len(dp)):
-					c1 = dp[j][0]
-					c2 = ensemblePredictions[j][0]
-				if blind_strategy:
+				c1 = dp[j][0]
+				c2 = ensemblePredictions[j][0]
+				if FLAGS.blind_strategy:
 					if (c1 >= 0.5) != (c2 >= 0.5):
 						disparities.append(j)	
 				else:
 					disparities.append(-np.absolute(c1 - c2))
-				if not blind_strategy:
-					disparities = np.argsort(disparities)[:int(len(disparities) * FLAGS.disparity_ratio)]
+			if not FLAGS.blind_strategy:
+				disparities = np.argsort(disparities)[:int(len(disparities) * FLAGS.disparity_ratio)]
 			misclassifiedIndices.append(disparities)
 		# Pick cases where all noise makes the model flip predictions (according to criteria)
-		all_noise_works = Set(sclassifiedIndices[0])
+		all_noise_works = Set(misclassifiedIndices[0])
 		for j in range(1, len(misclassifiedIndices)):
-			all_noise_works = all_noise_works & Set(sclassifiedIndices[j])
+			all_noise_works = all_noise_works & Set(misclassifiedIndices[j])
 		misclassifiedIndices = list(all_noise_works)
 
 		# Query oracle, pick examples for which ensemble was (crudely) right
@@ -244,7 +243,9 @@ if __name__ == "__main__":
 			train_df_y = np.array([])
 
 		# Stop algorithm if limit reached/exceeded
-		if int((FLAGS.active_ratio * len(X_dig_post) * (FLAGS.idkal_bs - 1)) / 2) <= ACTIVE_COUNT:
+		# if int((FLAGS.active_ratio * len(X_dig_post) * (FLAGS.idkal_bs - 1)) / 2) <= ACTIVE_COUNT:
+		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
+			print("Specified limit reached! Stopping algorithm")
 			break
 
 	# Print count of images queried so far
