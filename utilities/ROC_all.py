@@ -10,11 +10,14 @@ import matplotlib.pyplot as plt
 import os
 
 for input in os.listdir(sys.argv[1]):
-	TPR, FPR = np.loadtxt(os.path.join(sys.argv[1], input))
-	fileName = input.split('/')[-1].rsplit('.', 1)[0]
-	fileName = '$%s$' % fileName
-	fileName = fileName.replace(" ", "\ ")
-	plt.plot(FPR, TPR,  label=fileName)
+	try:
+		TPR, FPR = np.loadtxt(os.path.join(sys.argv[1], input))
+		fileName = input.split('/')[-1].rsplit('.', 1)[0]
+		fileName = '$%s$' % fileName
+		fileName = fileName.replace(" ", "\ ")
+		plt.plot(FPR, TPR,  label=fileName)
+	except:
+		pass
 
 # Plot y=x line for random-reference
 #plt.plot([0,1], [1,0], 'r--')

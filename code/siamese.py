@@ -26,7 +26,7 @@ class SiameseNetwork:
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
-	
+
 	def trainModel(self, trainDatagen, valGen, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=verbose)
 		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
@@ -39,7 +39,7 @@ class SiameseNetwork:
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
 		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
 		self.siamese_net.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop, reduce_lr])
-	
+
 	def testAccuracy(self, X, Y, batch_size=512):
 		n_correct, total = 0, 0
 		X_left, X_right, Y_send = [], [], []
@@ -82,7 +82,7 @@ class SiameseNetwork:
 				sys.stdout.write("%d / %d : Tr loss: %f, Tr acc: %f, Vl loss: %f, Vl acc: %f  \r" % (i+1, steps_per_epoch, train_loss/(i+1), train_acc/(i+1), val_loss/(i+1), val_acc/(i+1)))
 				sys.stdout.flush()
 			print("\n")
-			
+
 	def maybeLoadFromMemory(self):
 		try:
 			self.siamese_net.load_weights(self.modelName + ".h5")
@@ -126,7 +126,7 @@ class SmallRes(SiameseNetwork, object):
 		convnet.add(Flatten())
 		convnet.add(Dense(featureShape[0]))
 		convnet.add(Activation('relu'))
-		
+
 		left_input = Input(imageShape)
 		right_input = Input(imageShape)
 		encoded_l = convnet(left_input)

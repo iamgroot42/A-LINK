@@ -138,7 +138,7 @@ def getNormalGenerator(X_imposter, batch_size):
 		for i in range(len(X_imposter)):
 			for j in range(len(X_imposter)):
 				for x in X_imposter[i]:
-					for y in X_imposter[j]:						
+					for y in X_imposter[j]:
 						X_left.append(x)
 						X_right.append(y)
 						if i == j:
@@ -204,7 +204,7 @@ def splitDisguiseData(X_dig, pre_ratio=0.5):
 		#indices = np.random.permutation(X_dig[i].shape[0])
 		indices = np.arange(X_dig[i].shape[0])
 		#print(X_dig[i].shape[0], X_dig[i][indices[:splitPoint]].shape[0], X_dig[i][indices[splitPoint:]].shape[0])
-		assert(len(X_dig) >= 2), "You dead, nigga" #Required, for the way model is currenty built
+		#assert(len(X_dig[i]) >= 2), "You dead, nigga" #Required, for the way model is currenty built
 		X_dig_pre.append(X_dig[i][indices[:splitPoint]])
 		X_dig_post.append(X_dig[i][indices[splitPoint:]])
 	return (X_dig_pre, X_dig_post)
