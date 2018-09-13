@@ -71,7 +71,8 @@ if __name__ == "__main__":
 	# Some sanity checks
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
-	assert(0 < FLAGS.eps and FLAGS.eps < 0.5)
+	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
+	print("Noise that will be used for IDKAL: %s" % (FLAGS.noise))
 	
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
@@ -118,8 +119,8 @@ if __name__ == "__main__":
 		if FLAGS.refine_models:
 			individualModel.maybeLoadFromMemory()
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
-                        individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
-                        individualModel.save()
+			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
+			individualModel.save()
 		elif not individualModel.maybeLoadFromMemory():
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
@@ -186,8 +187,9 @@ if __name__ == "__main__":
 		queryIndices = []
 		for j in misclassifiedIndices:
 			# If ensemble's predictions not in grey area:
-			if c1 <= 0.5 - FLAGS.eps or c1 >= 0.5 + FLAGS.eps:
-				c1 = ensemblePredictions[j][0] >= 0.5
+			ensemble_prediction = ensemblePredictions[j][0]
+			if ensemble_prediction <= 0.5 - FLAGS.eps or ensemble_prediction >= 0.5 + FLAGS.eps:
+				c1 = ensemble_prediction >= 0.5
 				c2 = batch_y[j][0] >= 0.5
 				ACTIVE_COUNT += 1
 				if c1 == c2:
@@ -208,13 +210,13 @@ if __name__ == "__main__":
 		mp = int(len(intermediate) / float(len(ensembleNoise)))
 		# Gather data to be sent to low res model for training
 		if train_df_y.shape[0] > 0:
-			train_df_left_x  = np.concatenate((train_df_left_x,) + tuple([noisy_data[0][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))]))
-			train_df_right_x = np.concatenate((train_df_left_x,) + tuple([noisy_data[1][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))]))
-			train_df_y = np.concatenate((train_df_y,) + tuple([helpers.roundoff(intermediate)[i*mp:(i+1)*mp] for i in range(len(ensembleNoise))]))
+			train_df_left_x  = np.concatenate((train_df_left_x,)  + tuple([noisy_data[0][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))]))
+			train_df_right_x = np.concatenate((train_df_right_x,) + tuple([noisy_data[1][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))]))
+			train_df_y       = np.concatenate((train_df_y,)       + tuple([helpers.roundoff(intermediate)[i*mp:(i+1)*mp] for i in range(len(ensembleNoise))]))
 		else:
 			train_df_left_x  = np.concatenate([noisy_data[0][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))])
 			train_df_right_x = np.concatenate([noisy_data[1][i][queryIndices[i*mp:(i+1)*mp]] for i in range(len(ensembleNoise))])
-			train_df_y = np.concatenate([helpers.roundoff(intermediate)[i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
+			train_df_y       = np.concatenate([helpers.roundoff(intermediate)[i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
 
 		if train_df_y.shape[0] >= FLAGS.batch_send:
 			# Finetune disguised-faces model with this actively selected data points
@@ -222,19 +224,21 @@ if __name__ == "__main__":
 			(X_old_left, X_old_right), Y_old = dataGen.next()
 			for _ in range(FLAGS.mixture_ratio - 1):
 				X_old_temp, Y_old_temp = dataGen.next()
-				X_old_left = np.concatenate((X_old_left, X_old_temp[0]))
+				X_old_left  = np.concatenate((X_old_left,  X_old_temp[0]))
 				X_old_right = np.concatenate((X_old_right, X_old_temp[1]))
-				Y_old = np.concatenate((Y_old, Y_old_temp))
+				Y_old       = np.concatenate((Y_old, Y_old_temp))
 			if FLAGS.augment:
 				batch_x_aug, batch_y_aug = helpers.augment_data([batch_x[0][queryIndices], batch_x[1][queryIndices]], helpers.roundoff(intermediate), 1)
 				batch_x_aug_features = [conversionModel.process(p) for p in batch_x_aug]
-				train_df_left_x = np.concatenate((train_df_left_x, batch_x_aug_features[0], X_old_left))
+				train_df_left_x  = np.concatenate((train_df_left_x,  batch_x_aug_features[0], X_old_left))
 				train_df_right_x = np.concatenate((train_df_right_x, batch_x_aug_features[1], X_old_right))
-				train_df_y = np.concatenate((train_df_y, batch_y_aug, Y_old))
+				train_df_y       = np.concatenate((train_df_y, batch_y_aug, Y_old))
 			else:
-				train_df_left_x = np.concatenate((train_df_left_x, batch_x_features[0][queryIndices], X_old_left))
+				print(len(train_df_left_x), len(batch_x_features[0][queryIndices]), len(X_old_left), "left")
+				print(len(train_df_right_x), len(batch_x_features[1][queryIndices]), len(X_old_right), "right")
+				train_df_left_x  = np.concatenate((train_df_left_x,  batch_x_features[0][queryIndices], X_old_left))
 				train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices], X_old_right))
-				train_df_y = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
+				train_df_y       = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
 
 			# Use a lower learning rate for finetuning ?
 			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, FLAGS.ft_epochs, 16, 1)

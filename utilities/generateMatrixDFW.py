@@ -17,8 +17,12 @@ if __name__ == "__main__":
 	if len(sys.argv) < 2:
 		print("python " + sys.argv[0] + " modelName outputFilePath")
 	disguisedFacesModel = siamese.SiameseNetwork((2048,), sys.argv[1], 0.1)
-	disguisedFacesModel.maybeLoadFromMemory()
-	features = np.load("processeData.npy")
+	if disguisedFacesModel.maybeLoadFromMemory():
+		print("Loaded model successfully!")
+	else:
+		print("Oops! Model not found")
+		exit()
+	features = np.load("processedData.npy")
 	scores = []
 	assert(features.shape[0] == 7771)
 	for i in tqdm(range(len(features))):
@@ -30,4 +34,3 @@ if __name__ == "__main__":
 		scores.append(numbers)
 	scores = np.stack(scores)
 	np.savetxt(sys.argv[2], scores)
-

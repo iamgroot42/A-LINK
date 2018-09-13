@@ -9,10 +9,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-for input in os.listdir(sys.argv[1]):
+for input_type in os.listdir(sys.argv[1]):
 	try:
-		TPR, FPR = np.loadtxt(os.path.join(sys.argv[1], input))
-		fileName = input.split('/')[-1].rsplit('.', 1)[0]
+		TPR, FPR = np.loadtxt(os.path.join(sys.argv[1], input_type))
+		fileName = input_type.split('/')[-1].rsplit('.', 1)[0]
 		fileName = '$%s$' % fileName
 		fileName = fileName.replace(" ", "\ ")
 		plt.plot(FPR, TPR,  label=fileName)

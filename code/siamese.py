@@ -65,12 +65,12 @@ class SiameseNetwork:
 		steps_per_epoch = 320000 / batch_size
 		for _ in range(epochs):
 			train_loss, val_loss = 0, 0
-	                train_acc, val_acc = 0, 0
+			train_acc, val_acc = 0, 0
 			for i in range(steps_per_epoch):
 				x, y = dataGen.next()
 				# Split into train and val
 				indices = np.random.permutation(len(y))
-		                splitPoint = int(len(y) * valRatio)
+				splitPoint = int(len(y) * valRatio)
 				x_train, y_train = [ pp[indices[splitPoint:]] for pp in x], y[indices[splitPoint:]]
 				x_test, y_test = [ pp[indices[:splitPoint]] for pp in x], y[indices[:splitPoint]]
 				train_metrics = self.siamese_net.train_on_batch(x_train, y_train)
@@ -100,7 +100,7 @@ class SiameseNetwork:
 		return X
 
 	def predict(self, X):
-		return self.siamese_net.predict(self.preprocess(X))
+		return self.siamese_net.predict(self.preprocess(X), batch_size=1024)
 
 
 class SmallRes(SiameseNetwork, object):

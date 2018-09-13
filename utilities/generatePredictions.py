@@ -52,11 +52,11 @@ def generatePredictions(prefix, filePaths, featureModel, imageRes=(224, 224)):
 
 if __name__ == "__main__":
 	import sys
-	prefix = "DFW/DFW_Data"
+	prefix = sys.argv[1]
 	pathFile = os.path.join(prefix, "Testing_data_face_name.txt")
 	with open(pathFile) as f:
 		names = f.readlines()
 	names = [r.rstrip() for r in names]
 	featureModel = siamese.RESNET50((224, 224))
 	features = generatePredictions(prefix, names, featureModel)
-	np.save("processeData", features)
+	np.save("processedData.npy", features)

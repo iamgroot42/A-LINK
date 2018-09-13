@@ -27,11 +27,7 @@ class Bagging:
 	def attackModel(self, images, target_size):
 		attackPairs = []
 		# Heuristic to combine these attack sample points
-		if len(self.attacks) == 1:
-			return self.resize(self.attacks[0].addNoise(images), target_size)
-		else:
-			perturbed_images = []
-			for attack in self.attacks:
-				perturbed_images.append(self.resize(attack.addNoise(images), target_size))
-			return perturbed_images
-
+		perturbed_images = []
+		for attack in self.attacks:
+			perturbed_images.append(self.resize(attack.addNoise(images), target_size))
+		return perturbed_images

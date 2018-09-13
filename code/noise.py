@@ -125,15 +125,13 @@ class Perlin(Noise):
 			at = np.matmul(vd, av).reshape(ns, ns, 2, 2)
 			# horizontal and vertical interpolation
 			t[i, :, j, :] = np.matmul(np.matmul(d0, at), d1).reshape(ns, ns)
-
 		return m
-
 
 	def addIndividualNoise(self, image):
 		row, col, ch = image.shape
 		assert(row == col)
-		noise = np.average([self.individualFilterNoise(row, i) for i in [80, 40, 20, 10]], axis=0)
-		noisy = image + noise
+		noise = np.sum([self.individualFilterNoise(row, i) for i in [56, 32, 16]], axis=0) 
+		noisy = image + np.repeat(np.expand_dims(noise, 2), 3, 2)
 		return noisy
 
 

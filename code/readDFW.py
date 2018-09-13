@@ -6,23 +6,23 @@ import re
 
 
 def lookupFile(fullPath):
-        stupidString = '\xef\xbb\xbf'
-        directory, fileName = fullPath.rsplit('/', 1)
-        modifiedName, extension = fileName.rsplit('.', 1)
-        if os.path.exists(fullPath):
-                return fullPath
-        elif os.path.exists(os.path.join(directory + stupidString, modifiedName) + "." + extension):
-                return os.path.join(directory + stupidString, modifiedName) + "." + extension
-        elif os.path.exists(os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension):
-                return os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension
-        elif os.path.exists(os.path.join(directory, modifiedName + stupidString) + "." + extension):
-                return os.path.join(directory, modifiedName + stupidString) + "." + extension
-        elif os.path.exists(os.path.join(directory, " " + modifiedName) + "." + extension):
-                return os.path.join(directory, " " + modifiedName) + "." + extension
-        else:
-                print fullPath
-                print os.listdir(directory)
-                return None
+		stupidString = '\xef\xbb\xbf'
+		directory, fileName = fullPath.rsplit('/', 1)
+		modifiedName, extension = fileName.rsplit('.', 1)
+		if os.path.exists(fullPath):
+				return fullPath
+		elif os.path.exists(os.path.join(directory + stupidString, modifiedName) + "." + extension):
+				return os.path.join(directory + stupidString, modifiedName) + "." + extension
+		elif os.path.exists(os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension):
+				return os.path.join(directory + stupidString, modifiedName + stupidString) + "." + extension
+		elif os.path.exists(os.path.join(directory, modifiedName + stupidString) + "." + extension):
+				return os.path.join(directory, modifiedName + stupidString) + "." + extension
+		elif os.path.exists(os.path.join(directory, " " + modifiedName) + "." + extension):
+				return os.path.join(directory, " " + modifiedName) + "." + extension
+		else:
+				print fullPath
+				print os.listdir(directory)
+				return None
 
 
 def cropImages(prefix, dirPath, faceBoxes):
@@ -99,37 +99,37 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 
 
 def getRawTrainData(prefix, trainFolder, imageRes):
-        allImages = os.path.join(prefix, trainFolder)
-        X_plain = []
-        X_dig = []
-        personList = sorted(os.listdir(allImages))
-        for person in personList:
-                X_person_dig = []
+	allImages = os.path.join(prefix, trainFolder)
+	X_plain = []
+	X_dig = []
+	personList = sorted(os.listdir(allImages))
+	for person in personList:
+		X_person_dig = []
 		X_person_imp = []
-                X_person_normal = []
-                dirPath = os.path.join(allImages, person)
-                faceList = sorted(os.listdir(dirPath))
-                for impath in faceList:
-                        fullName = os.path.join(dirPath, impath)
+		X_person_normal = []
+		dirPath = os.path.join(allImages, person)
+		faceList = sorted(os.listdir(dirPath))
+		for impath in faceList:
+			fullName = os.path.join(dirPath, impath)
 			fullName = re.sub(r"[/]\s", "/", fullName)
-                        fileName = impath.rsplit('.', 1)[0]
-                        try:
-                                img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
-                                if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-                                        print img.shape
-                                if '_h_' in fileName:
-                                        X_person_dig.append(img)
-                                elif '_I_' in fileName:
+			fileName = impath.rsplit('.', 1)[0]
+			try:
+				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
+				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
+					print img.shape
+				if '_h_' in fileName:
+					X_person_dig.append(img)
+				elif '_I_' in fileName:
 					X_person_imp.append(None)
-                                else:
-                                        X_person_normal.append(img)
-                        except Exception, e:
-                                print(e)
-                if X_person_dig and X_person_imp and X_person_imp:
-                        X_dig.append(np.stack(X_person_dig))
-                        X_plain.append(np.stack(X_person_normal))
-        assert(len(X_plain) == len(X_dig)) # 1 validation & 1 training sample per person
-        return (X_plain, X_dig)
+				else:
+					X_person_normal.append(img)
+			except Exception, e:
+				print(e)
+		if X_person_dig and X_person_imp and X_person_imp:
+			X_dig.append(np.stack(X_person_dig))
+			X_plain.append(np.stack(X_person_normal))
+	assert(len(X_plain) == len(X_dig)) # 1 validation & 1 training sample per person
+	return (X_plain, X_dig)
 
 
 def getNormalGenerator(X_imposter, batch_size):
@@ -235,8 +235,42 @@ def createMiniBatch(X_plain, X_dig):
 	return [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 
 
+def getAllTestdata(prefix, fileList):
+	allImages = os.path.join(prefix, trainFolder)
+	X_plain = []
+	X_dig = []
+	personList = sorted(os.listdir(allImages))
+	for person in personList:
+		X_person_dig = []
+		X_person_imp = []
+		X_person_normal = []
+		dirPath = os.path.join(allImages, person)
+		faceList = sorted(os.listdir(dirPath))
+		for impath in faceList:
+			fullName = os.path.join(dirPath, impath)
+			fullName = re.sub(r"[/]\s", "/", fullName)
+			fileName = impath.rsplit('.', 1)[0]
+			try:
+				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
+				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
+					print img.shape
+				if '_h_' in fileName:
+					X_person_dig.append(img)
+				elif '_I_' in fileName:
+					X_person_imp.append(None)
+				else:
+					X_person_normal.append(img)
+			except Exception, e:
+				print(e)
+		if X_person_dig and X_person_imp and X_person_imp:
+			X_dig.append(np.stack(X_person_dig))
+			X_plain.append(np.stack(X_person_normal))
+	assert(len(X_plain) == len(X_dig)) # 1 validation & 1 training sample per person
+	return (X_plain, X_dig)
+
 if __name__ == "__main__":
-	prefix = "DFW/DFW_Data/"
+	import sys
+	prefix = sys.argv[1]
 	trainBoxesPath = prefix + "Training_data_face_coordinate.txt"
 	boxMap = constructIndexMap(trainBoxesPath)
 	#cropAllFolders(prefix, "Training_data", boxMap)
