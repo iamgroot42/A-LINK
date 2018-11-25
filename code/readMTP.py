@@ -8,33 +8,41 @@ from tqdm import tqdm
 def readAllImages(dirPath):
 	person_wise = {}
 	for path in tqdm(os.listdir(dirPath)):
-		img = cv2.resize(np.asarray(Image.open(os.path.join(dirPath, path)).convert('RGB'), dtype=np.float32), (150, 150))
-		person_id = int(path.split('_')[0])
-		person_wise[person_id] = person_wise.get(person_id, []) + [img]
+		if "_051_06" in path or "_051_08" in path:
+			img = cv2.resize(np.asarray(Image.open(os.path.join(dirPath, path)).convert('RGB'), dtype=np.float32), (150, 150))
+			person_id = int(path.split('_')[0])
+			person_wise[person_id] = person_wise.get(person_id, []) + [img]
 	return person_wise
 
 
 def personsplit(person_wise, split_ratio=0.25, target_resolution=(48, 48), num_train=100):
-	shuffled_indices = np.random.choice(len(person_wise.keys()), len(person_wise.keys()), replace=False)
-	train_indices = shuffled_indices[:num_train]
+	shuffled_indices = np.random.choice(person_wise.keys(), len(person_wise.keys()), replace=False)
+	train_indices =shuffled_indices[:num_train]
 	test_indices  = shuffled_indices[num_train:]
 
 	# Make splits for labelled/unlabelled data
-	split_pre, split_post = [], []
+	split_pre, split_post = {}, {}
 	for i in range(len(train_indices)):
 		splitPoint = int(len(person_wise[train_indices[i]]) * split_ratio)
 		indices = np.arange(len(person_wise[train_indices[i]]))
-		split_pre[train_indices[i]] = split_pre.get(train_indices[i], []) + np.array(person_wise[train_indices[i]])[indices[:splitPoint]]
-		split_post[train_indices[i]] = split_post.get(train_indices[i], []) + np.array(person_wise[train_indices[i]])[indices[splitPoint:]]
+		if train_indices[i] in split_pre:
+			split_pre[train_indices[i]]  = np.concatenate((split_pre[train_indices[i]], np.array(person_wise[train_indices[i]])[indices[:splitPoint]]))
+			split_post[train_indices[i]] = np.concatenate((split_post[train_indices[i]],np.array(person_wise[train_indices[i]])[indices[splitPoint:]]))
+		else:
+			split_pre[train_indices[i]]  = np.array(person_wise[train_indices[i]])[indices[:splitPoint]]
+			split_post[train_indices[i]] = np.array(person_wise[train_indices[i]])[indices[splitPoint:]]
 
 	# Contruct siamese-compatible data
-	def mix_match_data(data, base, resize):
+	def mix_match_data(data, base, resize=False):
 		data_X_left, data_X_right, data_Y = [], [], []
-		for i in range(len(data)):
+		for i in tqdm(range(len(data))):
 			# All images of that person
 			for i_sub in base[data[i]]:
-				i_sub_smaller = cv2.resize(i_sub, target_resolution)
-				for j in range(i, range(len(data))):
+				if resize:
+					i_sub_smaller = cv2.resize(i_sub, target_resolution)
+				else:
+					i_sub_smaller = i_sub
+				for j in range(i, len(data)):
 					# All images of that person
 					for j_sub in base[data[j]]:
 						if resize:
@@ -49,9 +57,9 @@ def personsplit(person_wise, split_ratio=0.25, target_resolution=(48, 48), num_t
 							data_Y.append([0])
 		return (data_X_left, data_X_right), data_Y
 
-	# train_X, train_Y = mix_match_data(train_indices)
-	train_X, train_Y = mix_match_data(range(len(train_indices)), split_pre)
-	pool_X, pool_Y   = mix_match_data(range(len(train_indices)), split_post)
+	train_X, train_Y = mix_match_data(train_indices, split_pre)
+	pool_X, pool_Y   = mix_match_data(train_indices, split_post)
+	# TODO : Use only the test data that they used (for consistent comparison)
 	test_X, test_Y   = mix_match_data(test_indices, person_wise, resize=True)
 
 	# Free up RAM
@@ -77,4 +85,4 @@ def generatorFeaturized(X, Y, batch_size, featurize=None, resize_res=None):
 def resizeImages(images, resize_res):
 	resized_left  = [cv2.resize(image, resize_res) for image in images[0]]
 	resized_right = [cv2.resize(image, resize_res) for image in images[1]]
-	return [images_left, images_right]
+	return [np.array(resized_left), np.array(resized_right)]
