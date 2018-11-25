@@ -83,7 +83,7 @@ if __name__ == "__main__":
 																				split_ratio=FLAGS.split_ratio,
 																				target_resolution=GlobalConstants.low_res,
 																				num_train=100) # 100 faces for training, 237 for testing
-	
+
 	# Some sanity checks
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
@@ -103,7 +103,7 @@ if __name__ == "__main__":
 	if FLAGS.train_lowres_model:
 		print('Training lowres-faces model')
 		# Get siamese generator from low-res data
-		lowResSiamGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize=GlobalConstants.low_res)
+		lowResSiamGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize_res=GlobalConstants.low_res)
 		lowResModel.customTrainModel(lowResSiamGen, FLAGS.lowres_epochs, FLAGS.batch_size, 0.2)
 		lowResModel.save()
 		exit()
@@ -115,11 +115,11 @@ if __name__ == "__main__":
 	for individualModel in ensemble:
 		if FLAGS.refine_models:
 			individualModel.maybeLoadFromMemory()
-			dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize=GlobalConstants.image_res, featurize=conversionModel)
+			dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize_res=GlobalConstants.image_res, featurize=conversionModel)
 			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
 		elif not individualModel.maybeLoadFromMemory():
-			dataGen = generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize=GlobalConstants.image_res, featurize=conversionModel)
+			dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize_res=GlobalConstants.image_res, featurize=conversionModel)
 			individualModel.save()
 	print('Finetuned highres-faces models')
 
@@ -130,17 +130,19 @@ if __name__ == "__main__":
 	UN_SIZE          = 0
 
 	# Framework begins
-	print("Framework beginning with a pool of %d" % (len(pool_X)))
-	dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize=GlobalConstants.low_res)
-	for ii in range(0, len(pool_X), FLAGS.idkal_bs):
+	print("Framework beginning with a pool of %d" % (len(pool_X[0])))
+	dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize_res=GlobalConstants.low_res)
+	for ii in range(0, len(pool_X[0]), FLAGS.idkal_bs):
 		print("\nIteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
 		
-		batch_x, batch_y = pool_X[ii: ii + FLAGS.idkal_bs]
-		batch_x_highres  = readMTP.resizeImages(batch_x, GlobalConstants.image_res)
-		batch_x_lowres   = readMTP.resizeImages(batch_x, GlobalConstants.low_res)
+		batch_x_left, batch_x_right, batch_y = pool_X[0][ii: ii + FLAGS.idkal_bs], pool_X[1][ii: ii + FLAGS.idkal_bs], pool_Y[ii: ii + FLAGS.idkal_bs]
+		batch_x_left  = np.array(batch_x_left)
+		batch_x_right = np.array(batch_x_right)
+		batch_x_highres  = readMTP.resizeImages([batch_x_left, batch_x_right], GlobalConstants.image_res)
+		batch_x_lowres   = readMTP.resizeImages([batch_x_left, batch_x_right], GlobalConstants.low_res)
 		# batch_y here acts as a pseudo-oracle
 		# any reference mde to it is counted as a query to the oracle
-		UN_SIZE += len(batch_x[0])
+		UN_SIZE += len(batch_x_left)
 
 		# Get featurized faces to be passed to committee
 		batch_x_features = [conversionModel.process(p) for p in batch_x_highres]
@@ -149,8 +151,8 @@ if __name__ == "__main__":
 		ensemblePredictions = bag.predict(batch_x_features)
 
 		# Get images with added noise
-		noisy_data_left  = [bag.attackModel(p, GlobalConstants.low_res) for p in batch_x[0]]
-		noisy_data_right = [bag.attackModel(p, GlobalConstants.low_res) for p in batch_x[1]]
+		noisy_data_left  = bag.attackModel(batch_x_left, GlobalConstants.low_res)
+		noisy_data_right = bag.attackModel(batch_x_right, GlobalConstants.low_res)
 		noisy_data = [noisy_data_left, noisy_data_right]
 
 		# Pass these to disguised-faces model, get predictions
@@ -220,7 +222,7 @@ if __name__ == "__main__":
 				X_old_right = np.concatenate((X_old_right, X_old_temp[1]))
 				Y_old       = np.concatenate((Y_old, Y_old_temp))
 			if FLAGS.augment:
-				batch_x_aug, batch_y_aug = helpers.augment_data([batch_x[0][queryIndices], batch_x[1][queryIndices]], helpers.roundoff(intermediate), 1)
+				batch_x_aug, batch_y_aug = helpers.augment_data([batch_x_left[queryIndices], batch_x_left[queryIndices]], helpers.roundoff(intermediate), 1)
 				train_lr_left_x  = np.concatenate((train_lr_left_x,  batch_x_aug[0], X_old_left))
 				train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_aug[1], X_old_right))
 				train_lr_y       = np.concatenate((train_lr_y,       batch_y_aug,    Y_old))
