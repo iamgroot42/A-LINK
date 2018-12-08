@@ -1,2 +1,2 @@
 # activeLearning
-Trying out different techniques for active learning (IP under Dr.Richa,IIITD and Dr.Mayank,IIITD)
+Code for `Recognizing Disguised Faces via Active Learning based Inter-Domain Knowledge`
