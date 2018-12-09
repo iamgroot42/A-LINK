@@ -20,8 +20,8 @@ def lookupFile(fullPath):
 		elif os.path.exists(os.path.join(directory, " " + modifiedName) + "." + extension):
 				return os.path.join(directory, " " + modifiedName) + "." + extension
 		else:
-				print fullPath
-				print os.listdir(directory)
+				print(fullPath)
+				print(os.listdir(directory))
 				return None
 
 
@@ -37,7 +37,7 @@ def cropImages(prefix, dirPath, faceBoxes):
 			tx, h, w, by = faceBoxes[partialName]
 			img = img.crop((tx, h, w, by))
 			img.save(fullName)
-		except Exception, e:
+		except Exception:
 			os.remove(fullName)
 			i += 1
 			print(e)
@@ -62,7 +62,7 @@ def cropAllFolders(prefix, trainFolder, boxMap):
 	print("Problem with", prob)
 
 
-def getAllTrainData(prefix, trainFolder, imageRes, model):
+def getAllTrainData(prefix, trainFolder, imageRes, model, combine_normal_imp=False):
 	allImages = os.path.join(prefix, trainFolder)
 	X_plain = []
 	X_dig = []
@@ -81,20 +81,26 @@ def getAllTrainData(prefix, trainFolder, imageRes, model):
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
 				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print img.shape
+					print(img.shape)
 				if '_h_' in fileName:
-					X_person_dig.append(img)
+					if combine_normal_imp:
+						X_person_normal.append(img) 
+					else:
+						X_person_dig.append(img)
 				elif '_I_' in fileName:
 					X_person_imp.append(img)
 				else:
 					X_person_normal.append(img)
-			except Exception, e:
-				print(e)
+			except Exception as ex:
+				print(ex)
 		if X_person_dig and X_person_imp and X_person_normal:
-			X_dig.append(model.process(np.stack(X_person_dig)))
+			if not combine_normal_imp:
+				X_dig.append(model.process(np.stack(X_person_dig)))
 			X_imp.append(model.process(np.stack(X_person_imp)))
 			X_plain.append(model.process(np.stack(X_person_normal)))
-	assert(len(X_plain) == len(X_dig) and len(X_dig) == len(X_imp)) # 1 validation & 1 training sample per person
+	if not combine_normal_imp:
+		 # 1 validation & 1 training sample per person
+		assert(len(X_plain) == len(X_dig) and len(X_dig) == len(X_imp))
 	return (X_plain, X_dig, X_imp)
 
 
@@ -116,15 +122,15 @@ def getRawTrainData(prefix, trainFolder, imageRes):
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
 				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print img.shape
+					print(img.shape)
 				if '_h_' in fileName:
 					X_person_dig.append(img)
 				elif '_I_' in fileName:
 					X_person_imp.append(None)
 				else:
 					X_person_normal.append(img)
-			except Exception, e:
-				print(e)
+			except Exception as ex:
+				print(ex)
 		if X_person_dig and X_person_imp and X_person_imp:
 			X_dig.append(np.stack(X_person_dig))
 			X_plain.append(np.stack(X_person_normal))
@@ -132,7 +138,7 @@ def getRawTrainData(prefix, trainFolder, imageRes):
 	return (X_plain, X_dig)
 
 
-def getNormalGenerator(X_imposter, batch_size):
+def getNormalGenerator(X_imposter, batch_size, infinite=True):
 	while True:
 		X_left, X_right, Y = [], [], []
 		for i in range(len(X_imposter)):
@@ -148,9 +154,11 @@ def getNormalGenerator(X_imposter, batch_size):
 						if len(Y) == batch_size:
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
+		if not infinite:
+			break
 
 
-def getImposterGenerator(X_plain, X_imposter, batch_size):
+def getImposterGenerator(X_plain, X_imposter, batch_size, infinite=True):
 	while True:
 		X_left, X_right, Y = [], [], []
 		for person in X_plain:
@@ -163,6 +171,8 @@ def getImposterGenerator(X_plain, X_imposter, batch_size):
 						if len(Y) == batch_size:
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
+		if not infinite:
+			break
 
 
 def getGenerator(norGen, normImpGen, impGen, batch_size, type=0, val_ratio=0.2):
@@ -193,7 +203,7 @@ def getGenerator(norGen, normImpGen, impGen, batch_size, type=0, val_ratio=0.2):
 			X_right = np.copy(X[1])
 			Y_send = np.copy(Y)
 		if len(Y_send) >= batch_size:
-			yield ( [X_left, X_right], Y_send)
+			yield ([X_left, X_right], Y_send)
 			X_left, X_right, Y_send = [], [], []
 
 
@@ -201,10 +211,7 @@ def splitDisguiseData(X_dig, pre_ratio=0.5):
 	X_dig_pre, X_dig_post = [], []
 	for i in range(len(X_dig)):
 		splitPoint = int(X_dig[i].shape[0] * pre_ratio)
-		#indices = np.random.permutation(X_dig[i].shape[0])
 		indices = np.arange(X_dig[i].shape[0])
-		#print(X_dig[i].shape[0], X_dig[i][indices[:splitPoint]].shape[0], X_dig[i][indices[splitPoint:]].shape[0])
-		#assert(len(X_dig[i]) >= 2), "You dead, nigga" #Required, for the way model is currenty built
 		X_dig_pre.append(X_dig[i][indices[:splitPoint]])
 		X_dig_post.append(X_dig[i][indices[splitPoint:]])
 	return (X_dig_pre, X_dig_post)
@@ -253,15 +260,15 @@ def getAllTestdata(prefix, fileList):
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
 				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print img.shape
+					print(img.shape)
 				if '_h_' in fileName:
 					X_person_dig.append(img)
 				elif '_I_' in fileName:
 					X_person_imp.append(None)
 				else:
 					X_person_normal.append(img)
-			except Exception, e:
-				print(e)
+			except Exception as ex:
+				print(ex)
 		if X_person_dig and X_person_imp and X_person_imp:
 			X_dig.append(np.stack(X_person_dig))
 			X_plain.append(np.stack(X_person_normal))
