@@ -130,7 +130,10 @@ class Perlin(Noise):
 	def addIndividualNoise(self, image):
 		row, col, ch = image.shape
 		assert(row == col)
-		noise = np.sum([self.individualFilterNoise(row, i) for i in [56, 32, 16]], axis=0) 
+		if row % 56 == 0:
+			noise = np.sum([self.individualFilterNoise(row, i) for i in [56, 32, 16]], axis=0)
+		else:
+			noise = np.sum([self.individualFilterNoise(row, i) for i in [50, 30, 15]], axis=0) 
 		noisy = image + np.repeat(np.expand_dims(noise, 2), 3, 2)
 		return noisy
 

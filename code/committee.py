@@ -25,7 +25,6 @@ class Bagging:
 		return np.array(resized_images)
 
 	def attackModel(self, images, target_size):
-		attackPairs = []
 		# Heuristic to combine these attack sample points
 		perturbed_images = []
 		for attack in self.attacks:

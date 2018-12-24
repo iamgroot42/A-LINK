@@ -14,6 +14,8 @@ from keras_vggface import utils
 from tensorflow.python.platform import flags
 from sklearn.metrics import confusion_matrix
 from sets import Set
+from tqdm import tqdm
+import sys
 
 
 def init():
@@ -41,20 +43,21 @@ class GlobalConstants:
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', '../../MultiPie51/train', 'Path to MTP data directory')
+flags.DEFINE_string('dataDirPrefix', '../../MultiPieSplits/split1/train', 'Path to MTP data directory')
+flags.DEFINE_string('testDir', '../../MultiPieSplits/split1/test', 'Path to MTP test data directory')
 flags.DEFINE_string('out_model', 'MTP_models/postIDKAL', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'MTP_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('lowres_basemodel', 'MTP_models/lowresModel', 'Name for model trained on low-res faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson', 'Prefix for ensemble models')
+flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin', 'Prefix for ensemble models')
 
-flags.DEFINE_integer('lowRes', 32, 'Resolution for low-res model (X,X)')
+flags.DEFINE_integer('lowRes', 48, 'Resolution for low-res model (X,X)')
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
-flags.DEFINE_integer('lowres_epochs', 4, 'Number of epochs while training lowres-faces model')
-flags.DEFINE_integer('highres_epochs', 4, 'Number of epochs while fine-tuning highres-faces model')
-flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
+flags.DEFINE_integer('lowres_epochs', 10, 'Number of epochs while training lowres-faces model')
+flags.DEFINE_integer('highres_epochs', 5, 'Number of epochs while fine-tuning highres-faces model')
+flags.DEFINE_integer('batch_send', 32, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_integer('idkal_bs', 16, 'Batch size to be used while running framework')
+flags.DEFINE_integer('idkal_bs', 8, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for highres-faces')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
@@ -64,7 +67,6 @@ flags.DEFINE_float('eps', 0.1, 'Region around equiboundary for even considering 
 
 flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
-flags.DEFINE_boolean('train_lowres_model', False, 'Train lowres-face model? (quits after training)')
 flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
 
 
@@ -74,19 +76,19 @@ if __name__ == "__main__":
 
 	# Set resolution according to flag
 	GlobalConstants.low_res = (FLAGS.lowRes, FLAGS.lowRes)
-	print("Low resolution : %s" % str(GlobalConstants.low_res))
+	print("== Low resolution : %s ==" % str(GlobalConstants.low_res))
 
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(GlobalConstants.image_res)
 
-	# Load images, convert to feature vectors for faster processing
+	# Load train images
 	X_dig_raw = readMTP.readAllImages(FLAGS.dataDirPrefix)
 
 	# Some sanity checks
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
-	print("Noise that will be used for IDKAL: %s" % (FLAGS.noise))
+	print("== Noise that will be used for IDKAL: %s ==" % (FLAGS.noise))
 
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
@@ -97,26 +99,26 @@ if __name__ == "__main__":
 		X_dig_post = X_dig_raw
 
 	# Construct ensemble of models
-	ensemble = [siamese.SiameseNetwork(GlobalConstants.feature_res, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models + 1)]
+	ensemble = [siamese.SiameseNetwork(GlobalConstants.feature_res, FLAGS.ensemble_basepath + str(i), 1e-1) for i in range(1, FLAGS.num_ensemble_models + 1)]
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
 	ensembleNoise = [noise.get_relevant_noise(x)() for x in desired_noises]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	lowResModel = siamese.SmallRes(GlobalConstants.low_res + (3,), GlobalConstants.feature_res, FLAGS.lowres_basemodel, 0.1)
+	lowResModel = siamese.SmallRes(GlobalConstants.low_res + (3,), GlobalConstants.feature_res, FLAGS.lowres_basemodel + str(FLAGS.lowRes) , 1e-1)
 
-	if FLAGS.train_lowres_model:
-		print('Training lowres-faces model')
+	if not lowResModel.maybeLoadFromMemory():
+		print('== Training lowres-faces model ==')
 		# Create generators for low-res data
 		normGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
-		lowResSiamGen = readMTP.getGenerator(normGen, FLAGS.batch_size, 0.2, GlobalConstants.low_res)
-		lowResModel.customTrainModel(lowResSiamGen, FLAGS.lowres_epochs, FLAGS.batch_size, 0.2, 32000)
+		lowResSiamGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.low_res)
+		lowResModel.customTrainModel(lowResSiamGen, FLAGS.lowres_epochs, FLAGS.batch_size, 0.2, 32000, preprocess=True)
 		lowResModel.save()
 		exit()
 	else:
 		lowResModel.maybeLoadFromMemory()
-		print('Loaded lowres-faces model from memory')
+		print('== Loaded lowres-faces model from memory ==')
 
 	normGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
 
@@ -124,15 +126,15 @@ if __name__ == "__main__":
 	for individualModel in ensemble:
 		if FLAGS.refine_models:
 			individualModel.maybeLoadFromMemory()
-			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, 0.2, GlobalConstants.image_res, conversionModel)
-			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 64000)
+			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
+			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
 			individualModel.save()
 		elif not individualModel.maybeLoadFromMemory():
-			print("Training ensemble model")
-			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, 0.2, GlobalConstants.image_res, conversionModel)
-			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 64000)
+			print("== Training ensemble model ==")
+			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
+			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
 			individualModel.save()
-	print('Finetuned highres-faces models')
+			exit()
 
 	# Train lowres-faces model only when batch length crosses threshold
 	train_lr_left_x  = np.array([])
@@ -141,40 +143,39 @@ if __name__ == "__main__":
 	UN_SIZE          = 0
 
 	# Framework begins
-	print("== Framework beginning with a pool of %d ==" % (len(pool_X[0])))
-	dataGen = readMTP.generatorFeaturized(train_X, train_Y, FLAGS.batch_size, resize_res=GlobalConstants.low_res)
-	for ii in range(0, len(pool_X[0]), FLAGS.idkal_bs):
+	print("== Framework beginning with a pool of %d ==" % (len(X_dig_post)))
+	dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.low_res)
+	for ii in range(0, len(X_dig_post), FLAGS.idkal_bs):
 		print("\nIteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
+		plain_part = X_dig_post[ii: ii + FLAGS.idkal_bs]
 
-		batch_x_left, batch_x_right, batch_y = pool_X[0][ii: ii + FLAGS.idkal_bs], pool_X[1][ii: ii + FLAGS.idkal_bs], pool_Y[ii: ii + FLAGS.idkal_bs]
-		batch_x_left  = np.array(batch_x_left)
-		batch_x_right = np.array(batch_x_right)
-		batch_x_highres  = readMTP.resizeImages([batch_x_left, batch_x_right], GlobalConstants.image_res)
-		batch_x_lowres   = readMTP.resizeImages([batch_x_left, batch_x_right], GlobalConstants.low_res)
+		# Create pairs of images
+		batch_x, batch_y = readMTP.createMiniBatch(plain_part)
+
 		# batch_y here acts as a pseudo-oracle
 		# any reference mde to it is counted as a query to the oracle
-		UN_SIZE += len(batch_x_left)
+		UN_SIZE += len(batch_x[0])
 
+		batch_x_highres  = readMTP.resizeImages(batch_x, GlobalConstants.image_res)
+		batch_x_lowres   = readMTP.resizeImages(batch_x, GlobalConstants.low_res)
+		
 		# Get featurized faces to be passed to committee
 		batch_x_features = [conversionModel.process(p) for p in batch_x_highres]
 
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
-
+		
 		# Get images with added noise
-		noisy_data_left  = bag.attackModel(batch_x_left, GlobalConstants.low_res)
-		noisy_data_right = bag.attackModel(batch_x_right, GlobalConstants.low_res)
-		noisy_data = [noisy_data_left, noisy_data_right]
+		noisy_data = [bag.attackModel(p, GlobalConstants.low_res) for p in batch_x]
 
 		# Pass these to disguised-faces model, get predictions
-		disguisedPredictions = [lowResModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(len(ensembleNoise))]
+		disguisedPredictions = [lowResModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(len(ensembleNoise))] 
 		misclassifiedIndices = []
 		for dp in disguisedPredictions:
 			disparities = []
 			for j in range(len(dp)):
 				c1 = dp[j][0]
 				c2 = ensemblePredictions[j][0]
-				# print(c1, c2, "yeehaw")
 				if FLAGS.blind_strategy:
 					if (c1 >= 0.5) != (c2 >= 0.5):
 						disparities.append(j)
@@ -197,7 +198,6 @@ if __name__ == "__main__":
 			if ensemble_prediction <= 0.5 - FLAGS.eps or ensemble_prediction >= 0.5 + FLAGS.eps:
 				c1 = ensemble_prediction >= 0.5
 				c2 = batch_y[j][0] >= 0.5
-				print(ensemble_prediction , batch_y[j][0], "hawwyee")
 				GlobalConstants.active_count += 1
 				if c1 == c2:
 					queryIndices.append(j)
@@ -226,7 +226,6 @@ if __name__ == "__main__":
 			train_lr_right_x = np.concatenate([noisy_data[1][i][queryIndices[i*mp: (i+1)*mp]] for i in range(len(ensembleNoise))])
 			train_lr_y       = np.concatenate([helpers.roundoff(intermediate)[i*mp:(i+1)*mp]  for i in range(len(ensembleNoise))])
 
-		print("== Accumulated data so far (for next batch) : %d ==" % train_lr_y.shape[0])
 		if train_lr_y.shape[0] >= FLAGS.batch_send:
 			# Finetune lowres-faces model with these actively selected data points
 			# Also, add unperturbed images to avoid overfitting on noise
@@ -242,11 +241,8 @@ if __name__ == "__main__":
 				train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_aug[1], X_old_right))
 				train_lr_y       = np.concatenate((train_lr_y,       batch_y_aug,    Y_old))
 			else:
-				print(len(train_lr_left_x),  len(batch_x_features[0][queryIndices]), len(X_old_left),  "left")
-				print(len(train_lr_right_x), len(batch_x_features[1][queryIndices]), len(X_old_right), "right")
-				print(train_lr_left_x.shape, batch_x_features[0][queryIndices].shape, X_old_left.shape, "wut")
-				train_lr_left_x  = np.concatenate((train_lr_left_x,  batch_x_features[0][queryIndices], X_old_left))
-				train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_features[1][queryIndices], X_old_right))
+				train_lr_left_x  = np.concatenate((train_lr_left_x,  batch_x_lowres[0][queryIndices], X_old_left))
+				train_lr_right_x = np.concatenate((train_lr_right_x, batch_x_lowres[1][queryIndices], X_old_right))
 				train_lr_y       = np.concatenate((train_lr_y,       helpers.roundoff(intermediate),    Y_old))
 
 			# Use a lower learning rate for finetuning ?
@@ -265,3 +261,23 @@ if __name__ == "__main__":
 
 	# Save retrained model
 	lowResModel.save(FLAGS.out_model)
+
+	# Load test images
+	X_test = readMTP.readAllImages(FLAGS.testDir, GlobalConstants.low_res)
+
+	# Create gallery images per person
+	X_gallery = [x[0] for x in X_test]
+
+	# Calculate top-1 identification accuracy
+	total_count, acc = 0, 0
+	for i in tqdm(range(len(X_test))):
+		for x in X_test[i]:
+			left = []
+			for gal in X_gallery:
+				left.append(x)
+			predicted_scores = np.squeeze(lowResModel.predict([np.array(left), np.array(X_gallery)]))
+			predicted_id = np.argmax(predicted_scores)
+			total_count += 1
+			if predicted_id == i:
+				acc += 1
+	print('Top-1 accuracy : ', acc / float(total_count))

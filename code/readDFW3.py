@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 import os
+from tqdm import tqdm
 import cv2
 import re
 
@@ -68,7 +69,7 @@ def getAllTrainData(prefix, trainFolder, imageRes, model, combine_normal_imp=Fal
 	X_dig = []
 	X_imp = []
 	personList = sorted(os.listdir(allImages))
-	for person in personList:
+	for person in tqdm(personList):
 		X_person_dig = []
 		X_person_imp = []
 		X_person_normal = []
@@ -93,7 +94,7 @@ def getAllTrainData(prefix, trainFolder, imageRes, model, combine_normal_imp=Fal
 					X_person_normal.append(img)
 			except Exception as ex:
 				print(ex)
-		if X_person_dig and X_person_imp and X_person_normal:
+		if X_person_imp and X_person_normal:
 			if not combine_normal_imp:
 				X_dig.append(model.process(np.stack(X_person_dig)))
 			X_imp.append(model.process(np.stack(X_person_imp)))
@@ -138,13 +139,13 @@ def getRawTrainData(prefix, trainFolder, imageRes):
 	return (X_plain, X_dig)
 
 
-def getNormalGenerator(X_data, batch_size, infinite=True):
+def getNormalGenerator(X_imposter, batch_size, infinite=True):
 	while True:
 		X_left, X_right, Y = [], [], []
-		for i in range(len(X_data)):
-			for j in range(len(X_data)):
-				for x in X_data[i]:
-					for y in X_data[j]:
+		for i in range(len(X_imposter)):
+			for j in range(len(X_imposter)):
+				for x in X_imposter[i]:
+					for y in X_imposter[j]:
 						X_left.append(x)
 						X_right.append(y)
 						if i == j:
@@ -155,7 +156,7 @@ def getNormalGenerator(X_data, batch_size, infinite=True):
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
 		if not infinite:
-			break
+			yield None, None
 
 
 def getImposterGenerator(X_plain, X_imposter, batch_size, infinite=True):
@@ -172,15 +173,21 @@ def getImposterGenerator(X_plain, X_imposter, batch_size, infinite=True):
 							yield [np.stack(X_left), np.stack(X_right)], np.stack(Y)
 							X_left, X_right, Y = [], [], []
 		if not infinite:
-			break
+			yield None, None
 
 
 def getGenerator(norGen, normImpGen, impGen, batch_size, type=0, val_ratio=0.2):
 	X_left, X_right, Y_send = [], [], []
 	while True:
-		X1, Y1 = norGen.next()
-		X2, Y2 = normImpGen.next()
-		X3, Y3 = impGen.next()
+		X1, Y1 = next(norGen)
+		if X1 is None or Y1 is None:
+			yield (None, None), None
+		X2, Y2 = next(normImpGen)
+		if X2 is None or Y2 is None:
+			yield (None, None), None
+		X3, Y3 = next(impGen)
+		if X3 is None or Y3 is None:
+			yield (None, None), None
 		Y = np.concatenate((Y1, Y2, Y2), axis=0)
 		X = [np.concatenate((X1[0], X2[0], X3[0]), axis=0), np.concatenate((X1[1], X2[1], X3[1]), axis=0)]
 		# Generate data in 1:1 ratio to avoid overfitting
@@ -209,7 +216,7 @@ def getGenerator(norGen, normImpGen, impGen, batch_size, type=0, val_ratio=0.2):
 
 def splitDisguiseData(X_dig, pre_ratio=0.5):
 	X_dig_pre, X_dig_post = [], []
-	for i in range(len(X_dig)):
+	for i in tqdm(range(len(X_dig))):
 		splitPoint = int(X_dig[i].shape[0] * pre_ratio)
 		indices = np.arange(X_dig[i].shape[0])
 		X_dig_pre.append(X_dig[i][indices[:splitPoint]])

@@ -1,4 +1,5 @@
 import readDFW3 as readDFW
+import readMTP3 as readMTP
 import siamese3 as siamese
 
 from learners import ActiveLearner
@@ -22,7 +23,7 @@ sess = tf.Session(config=config)
 keras.backend.set_session(sess)
 
 # Global
-IMAGERES = (224, 224)
+IMAGERES = (48, 48)
 FEATURERES = (2048,)
 
 FLAGS = flags.FLAGS
@@ -33,6 +34,7 @@ flags.DEFINE_string('model_path', 'WACV_models/active', 'Prefix for model')
 flags.DEFINE_string('out_model', 'WACV_models/post_active', 'Name of model to be saved after active-learning')
 flags.DEFINE_string('query_strategy', 'uncertainty_sampling', 'Query strategy for active-learning')
 
+flags.DEFINE_integer('lowRes', 48, 'Resolution for low-res model (X,X)')
 flags.DEFINE_integer('epochs', 3, 'Number of epochs while training model')
 flags.DEFINE_integer('batch_size', 512, 'Batch size while training model')
 
@@ -52,13 +54,8 @@ def get_strategy_object():
 if __name__ == "__main__":
 	# Define image featurization model
 
-	################## REPLACE BELOW WITH CUSTOM FEATURIZATION MODEL          ##################
-	################## Should implement the functions used in RESNET50 class  ##################
-
-	conversionModel = siamese.RESNET50(IMAGERES)
-
-	################## REPLACE ABOVE WITH CUSTOM FEATURIZATION MODEL          ##################
-
+	IMAGERES = (FLAGS.lowRes, FLAGS.lowRes)
+	
 	# Construct ensemble of models
 	model = siamese.SiameseNetwork(FEATURERES, FLAGS.model_path, 0.1)
 

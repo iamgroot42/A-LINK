@@ -50,37 +50,30 @@ class SiameseNetwork:
 				Y_send.append(1*(Y[i] == Y[j]))
 				if len(X_left) == batch_size:
 					Y_send = np.stack(Y_send)
-					predictions = np.argmax(self.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
+					predictions = np.argmax(self.siamese_net.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
 					n_correct += np.sum(predictions == Y_send)
 					total += len(X_left)
 					X_left, X_right, Y_send = [], [], []
 		if len(X_left) > 0:
 			Y_send = np.stack(Y_send)
-			predictions = np.argmax(self.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
+			predictions = np.argmax(self.siamese_net.predict([np.stack(X_left), np.stack(X_right)]), axis=1)
 			n_correct += np.sum(predictions == Y_send)
 			total += len(X_left)
 		return n_correct / float(total)
 
-	def customTrainModel(self, dataGen, epochs, batch_size, valRatio=0.2, n_steps=320000, preprocess=False):
+	def customTrainModel(self, dataGen, epochs, batch_size, valRatio=0.2, n_steps=320000):
 		steps_per_epoch = int(n_steps / batch_size)
 		for _ in range(epochs):
 			train_loss, val_loss = 0, 0
 			train_acc, val_acc = 0, 0
 			for i in range(steps_per_epoch):
-				x, y = dataGen.next()
-				if preprocess:
-					x = self.preprocess(x)
+				x, y = next(dataGen)
 				# Split into train and val
 				indices = np.random.permutation(len(y))
 				splitPoint = int(len(y) * valRatio)
 				x_train, y_train = [ pp[indices[splitPoint:]] for pp in x], y[indices[splitPoint:]]
 				x_test, y_test = [ pp[indices[:splitPoint]] for pp in x], y[indices[:splitPoint]]
-				class_1_weight = len(y_train)/np.sum(y_train == 1)
-				class_0_weight = len(y_train)/np.sum(y_train == 0)
-				scaling_factor = float(class_1_weight + class_0_weight)
-				class_weight = {0: class_0_weight/scaling_factor, 1:class_1_weight/scaling_factor}
-				# class_weight = {0: 0.5, 1:0.5}
-				train_metrics = self.siamese_net.train_on_batch(x_train, y_train, class_weight=class_weight)
+				train_metrics = self.siamese_net.train_on_batch(x_train, y_train)
 				train_loss += train_metrics[0]
 				train_acc += train_metrics[1]
 				val_metrics = self.siamese_net.test_on_batch(x_test, y_test)
@@ -140,19 +133,12 @@ class SmallRes(SiameseNetwork, object):
 		encoded_r = convnet(right_input)
 		L1_layer = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
 		L1_distance = L1_layer([encoded_l, encoded_r])
-		hidden = Dense(128, activation='relu')(L1_distance)
-		hidden2 = Dense(32, activation='relu')(hidden)
-		prediction = Dense(1, activation='relu')(hidden2)
+		hidden = Dense(512, activation='relu')(L1_distance)
+		hidden2 = Dense(64, activation='relu')(hidden)
+		prediction = Dense(1, activation='sigmoid')(hidden2)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
-
-	def preprocess(self, X):
-		X_temp = [ (x - 128.) / 128. for x in X]
-		return X_temp
-
-	def predict(self, X):
-		return self.siamese_net.predict(self.preprocess(X), batch_size=1024)
 
 
 class FaceVGG16:
@@ -168,7 +154,7 @@ class FaceVGG16:
 		return utils.preprocess_input(X_temp, version=1)
 
 	def process(self, X):
-		return self.model.predict(self.preprocess(X), batch_size=128)
+		return self.model.predict(self.preprocess(X))
 
 
 class RESNET50:
@@ -183,4 +169,4 @@ class RESNET50:
 		return utils.preprocess_input(X_temp, version=2)
 
 	def process(self, X):
-		return self.model.predict(self.preprocess(X), batch_size=128)
+		return self.model.predict(self.preprocess(X))
