@@ -1,3 +1,3 @@
 # A-LINK
 
-Code for `A-LINK: Recognizing Disguised Faces via Active Learning based Inter-DomainKnowledge`
+Code for our paper `A-LINK: Recognizing Disguised Faces via Active Learning based Inter-Domain Knowledge`, accepted at [IEEE BTAS 2019](http://ieee-biometrics.org/btas2019/)
