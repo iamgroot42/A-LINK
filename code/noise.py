@@ -1,6 +1,7 @@
 from itertools import product, count
 import numpy as np 
 import cv2
+from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
 
 
 class Noise(object):
@@ -138,6 +139,52 @@ class Perlin(Noise):
 		return noisy
 
 
+class AdversarialNoise(Noise):
+	def __init__(self, model, sess):
+		super(AdversarialNoise, self).__init__(model)
+		self.attack_object = None
+		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
+		self.sess = sess
+
+	def addIndividualNoise(self, image):
+		self.attack_params['batch_size'] = 1
+		mini_batch = [image]
+		return self.attack_object.generate_np(mini_batch, **self.attack_params)[0]
+
+
+class Momentum(AdversarialNoise):
+	def __init__(self, model, sess):
+		super(Momentum, self).__init__(model, sess)
+		self.attack_object = MomentumIterativeMethod(self.model, sess=self.sess)
+		self.attack_params['eps'] = 0.3
+		self.attack_params['eps_iter'] = 0.06
+		self.attack_params['nb_iter'] = 3
+
+
+class FGSM(AdversarialNoise):
+	def __init__(self, model, sess):
+		super(FGSM, self).__init__(model, sess)
+		self.attack_object = FastGradientMethod(self.model, sess=self.sess)
+		self.attack_params['eps'] = 0.1
+
+
+class Virtual(AdversarialNoise):
+	def __init__(self, model, sess):
+		super(Virtual, self).__init__(model, sess)
+		self.attack_object = VirtualAdversarialMethod(self.model, sess=self.sess)
+		self.attack_params['xi'] = 1e-6
+		self.attack_params['num_iterations'] = 1
+		self.attack_params['eps'] = 2.0
+
+
+class Madry(AdversarialNoise):
+	def __init__(self, model, sess):
+		super(Madry, self).__init__(model, sess)
+		self.attack_object = MadryEtAl(self.model, sess=self.sess)
+		self.attack_params['nb_iter'] = 5
+		self.attack_params['eps'] = 0.1
+
+
 def get_relevant_noise(noise_string):
 	noise_mapping = {
 		'gaussian': Gaussian,
@@ -145,7 +192,10 @@ def get_relevant_noise(noise_string):
 		'poisson': Poisson,
 		'speckle': Speckle,
 		'plain': Noise,
-		'perlin': Perlin
+		'perlin': Perlin,
+		'momentum': Momentum,
+		'fgsm': FGSM,
+		'madry': Madry
 	}
 	if noise_string.lower() in noise_mapping:
 		return noise_mapping[noise_string.lower()]

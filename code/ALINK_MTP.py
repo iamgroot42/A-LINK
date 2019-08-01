@@ -45,7 +45,7 @@ FLAGS = flags.FLAGS
 
 flags.DEFINE_string('dataDirPrefix', '../../MultiPieSplits/split1/train', 'Path to MTP data directory')
 flags.DEFINE_string('testDir', '../../MultiPieSplits/split1/test', 'Path to MTP test data directory')
-flags.DEFINE_string('out_model', 'MTP_models/postIDKAL', 'Name of model to be saved after finetuning')
+flags.DEFINE_string('out_model', 'MTP_models/postALINK', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'MTP_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('lowres_basemodel', 'MTP_models/lowresModel', 'Name for model trained on low-res faces')
 flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin', 'Prefix for ensemble models')
@@ -57,7 +57,7 @@ flags.DEFINE_integer('lowres_epochs', 10, 'Number of epochs while training lowre
 flags.DEFINE_integer('highres_epochs', 5, 'Number of epochs while fine-tuning highres-faces model')
 flags.DEFINE_integer('batch_send', 32, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_integer('idkal_bs', 8, 'Batch size to be used while running framework')
+flags.DEFINE_integer('alink_bs', 8, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for highres-faces')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
@@ -88,7 +88,7 @@ if __name__ == "__main__":
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
-	print("== Noise that will be used for IDKAL: %s ==" % (FLAGS.noise))
+	print("== Noise that will be used for ALINK: %s ==" % (FLAGS.noise))
 
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
@@ -145,9 +145,9 @@ if __name__ == "__main__":
 	# Framework begins
 	print("== Framework beginning with a pool of %d ==" % (len(X_dig_post)))
 	dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.low_res)
-	for ii in range(0, len(X_dig_post), FLAGS.idkal_bs):
-		print("\nIteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
-		plain_part = X_dig_post[ii: ii + FLAGS.idkal_bs]
+	for ii in range(0, len(X_dig_post), FLAGS.alink_bs):
+		print("\nIteration #%d" % ((ii / FLAGS.alink_bs) + 1))
+		plain_part = X_dig_post[ii: ii + FLAGS.alink_bs]
 
 		# Create pairs of images
 		batch_x, batch_y = readMTP.createMiniBatch(plain_part)

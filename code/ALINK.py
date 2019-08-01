@@ -35,7 +35,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
-flags.DEFINE_string('out_model', 'WACV_models/postIDKAL', 'Name of model to be saved after finetuning')
+flags.DEFINE_string('out_model', 'WACV_models/postALINK', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'WACV_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('disguised_basemodel', 'WACV_models/disguisedModel', 'Name for model trained on disguised faces')
 flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson', 'Prefix for ensemble models')
@@ -46,7 +46,7 @@ flags.DEFINE_integer('dig_epochs', 40, 'Number of epochs while training disguise
 flags.DEFINE_integer('undig_epochs', 60, 'Number of epochs while fine-tuning undisguised-faces model')
 flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
 flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_integer('idkal_bs', 16, 'Batch size to be used while running framework')
+flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
@@ -72,7 +72,7 @@ if __name__ == "__main__":
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
-	print("Noise that will be used for IDKAL: %s" % (FLAGS.noise))
+	print("Noise that will be used for ALINK: %s" % (FLAGS.noise))
 	
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
@@ -138,10 +138,10 @@ if __name__ == "__main__":
 	# Framework begins
 	print("Framework beginning with a pool of %d" % (len(X_dig_post)))
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
-	for ii in range(0, len(X_dig_post), FLAGS.idkal_bs):
-		print("\nIteration #%d" % ((ii / FLAGS.idkal_bs) + 1))
-		plain_part = X_plain_raw[ii: ii + FLAGS.idkal_bs]
-		disguise_part = X_dig_post[ii: ii + FLAGS.idkal_bs]
+	for ii in range(0, len(X_dig_post), FLAGS.alink_bs):
+		print("\nIteration #%d" % ((ii / FLAGS.alink_bs) + 1))
+		plain_part = X_plain_raw[ii: ii + FLAGS.alink_bs]
+		disguise_part = X_dig_post[ii: ii + FLAGS.alink_bs]
 
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
@@ -247,7 +247,7 @@ if __name__ == "__main__":
 			train_df_y = np.array([])
 
 		# Stop algorithm if limit reached/exceeded
-		# if int((FLAGS.active_ratio * len(X_dig_post) * (FLAGS.idkal_bs - 1)) / 2) <= ACTIVE_COUNT:
+		# if int((FLAGS.active_ratio * len(X_dig_post) * (FLAGS.alink_bs - 1)) / 2) <= ACTIVE_COUNT:
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
 			print("Specified limit reached! Stopping algorithm")
 			break
