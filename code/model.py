@@ -31,9 +31,9 @@ class CustomModel:
 	def preprocess(self, X):
 		return X
 
-	def finetune(self, X, Y, epochs, batch_size, verbose=1):
+	def finetune(self, X, Y, epochs, batch_size, verbose=1, sample_weight=None):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop])
+		self.model.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop], sample_weight=sample_weight)
 
 	def trainModel(self, X_train, Y_train, X_val, Y_val, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)

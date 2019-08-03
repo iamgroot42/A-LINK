@@ -48,11 +48,13 @@ flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-fa
 flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
+flags.DEFINE_integer('adv_iters', 1, 'Number of noise-addition iterations per iteration of ALINK')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
 flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
 flags.DEFINE_float('disparity_ratio', 0.25, 'What percentage of data to pick to pass on to oracle')
 flags.DEFINE_float('eps', 0.1, 'Region around equiboundary for even considering querying the oracle')
+flags.DEFINE_float('adv_mix_ratio', 1.0, 'Fraction of model loss to be assigned to adversarial examples (if adversarial noise selected) [0,1]')
 
 flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
@@ -63,7 +65,7 @@ flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >=
 if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
-	
+
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
 	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
@@ -72,26 +74,31 @@ if __name__ == "__main__":
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
+	assert(0 <= FLAGS.adv_mix_ratio and FLAGS.adv_mix_ratio <= 1)
 	print("Noise that will be used for ALINK: %s" % (FLAGS.noise))
-	
+
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
-		(X_dig_pre, _) = readDFW.splitDisguiseData(X_dig, pre_ratio=FLAGS.split_ratio)
+		(X_dig_pre, _)  = readDFW.splitDisguiseData(X_dig, pre_ratio=FLAGS.split_ratio)
 		(_, X_dig_post) = readDFW.splitDisguiseData(X_dig_raw, pre_ratio=FLAGS.split_ratio)
 	elif FLAGS.split_ratio == 1:
 		X_dig_pre = X_dig_raw
 	else:
 		X_dig_post = X_dig_raw
 
-	# Construct ensemble of models
-	ensemble = [siamese.SiameseNetwork(FEATURERES, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models+1)]
+	# Ready disguised face model
+	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, FLAGS.disguised_basemodel, 0.1)
+
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
-	ensembleNoise = [noise.get_relevant_noise(x)() for x in desired_noises]
+	ensembleNoise = [noise.get_relevant_noise(x)(disguisedFacesModel, sess) for x in desired_noises]
+	if not np.any([isinstance(n, noise.AdversarialNoise) for x in ensembleNoise]):
+		FLAGS.adv_iters = 0
+		print("No adversarial noise specified: skipping nested loop")
 
-	# Ready committee of models
+	# Construct ensemble of models
+	ensemble = [siamese.SiameseNetwork(FEATURERES, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models+1)]
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	disguisedFacesModel = siamese.SiameseNetwork(FEATURERES, FLAGS.disguised_basemodel, 0.1)
 
 	if FLAGS.train_disguised_model:
 		# Create generators for disguised model
@@ -110,8 +117,8 @@ if __name__ == "__main__":
 		print('Loaded disguised-faces model from memory')
 
 	# Create generators
-	normGen = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
-	normImpGen = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
+	normGen     = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
+	normImpGen  = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
 	impGenNorm  = readDFW.getImposterGenerator(X_plain, X_imp, FLAGS.batch_size)
 
 	# Train/Finetune undisguised model(s), if not already trained
@@ -146,7 +153,7 @@ if __name__ == "__main__":
 		# Create pairs of images
 		batch_x, batch_y = readDFW.createMiniBatch(plain_part, disguise_part)
 		# batch_y here acts as a pseudo-oracle
-		# any reference mde to it is counted as a query to the oracle
+		# any reference made to it is counted as a query to the oracle
 		UN_SIZE += len(batch_x[0])
 
 		# Get featurized faces to be passed to committee
@@ -155,14 +162,37 @@ if __name__ == "__main__":
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
 
+		# Nested loop (if adversarial noise present)
+		for _ in range(FLAGS.adv_iters):
+
+			# Get images with added noise
+			m1_labels = np.argmax(ensemblePredictions, axis=1)
+			noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
+
+			# Get features back from noisy images
+			noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
+
+			# Gather data
+			mp = int(len(noisy_data) / float(len(ensembleNoise)))
+			adv_tune_left_x  = np.concatenate([noisy_data[0][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
+			adv_tune_right_x = np.concatenate([noisy_data[1][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
+			tune_left_x      = np.concatenate((adv_tune_left_x,  batch_x_features[0]))
+			tune_right_x     = np.concatenate((adv_tune_right_x, batch_x_features[1]))
+			tune_y           = np.concatenate((m1_labels, m1_labels))
+			sample_weight    = [FLAGS.adv_mix_ratio] * len(m1_labels) + [1] * len(m1_labels)
+
+			# Fine-tune M2 on adversarial + clean examples
+			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, FLAGS.ft_epochs, 16, 1, sample_weight=sample_weight)
+
 		# Get images with added noise
-		noisy_data = [bag.attackModel(p, IMAGERES) for p in batch_x]
+		m1_labels = np.argmax(ensemblePredictions, axis=1)
+		noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
 
 		# Get features back from noisy images
 		noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
 
 		# Pass these to disguised-faces model, get predictions
-		disguisedPredictions = [disguisedFacesModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(len(ensembleNoise))] 
+		disguisedPredictions = [disguisedFacesModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(len(ensembleNoise))]
 		misclassifiedIndices = []
 		for dp in disguisedPredictions:
 			disparities = []
@@ -171,7 +201,7 @@ if __name__ == "__main__":
 				c2 = ensemblePredictions[j][0]
 				if FLAGS.blind_strategy:
 					if (c1 >= 0.5) != (c2 >= 0.5):
-						disparities.append(j)	
+						disparities.append(j)
 				else:
 					disparities.append(-np.absolute(c1 - c2))
 			if not FLAGS.blind_strategy:
@@ -207,6 +237,7 @@ if __name__ == "__main__":
 			intermediate.append(ensemblePredictions[i][0])
 		intermediate = np.array(intermediate)
 
+		# Create equal partitions while mixing multiple types of noise together
 		mp = int(len(intermediate) / float(len(ensembleNoise)))
 		# Gather data to be sent to low res model for training
 		if train_df_y.shape[0] > 0:
@@ -257,3 +288,4 @@ if __name__ == "__main__":
 
 	# Save retrained model
 	disguisedFacesModel.save(FLAGS.out_model)
+

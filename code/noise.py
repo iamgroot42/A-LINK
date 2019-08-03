@@ -1,21 +1,22 @@
 from itertools import product, count
-import numpy as np 
+import numpy as np
 import cv2
 from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
 
 
 class Noise(object):
-	def __init__(self, model=None):
+	def __init__(self, model=None, sess=None):
 		self.model = model
+		self.sess = sess
 		pass
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		return image
 
-	def addNoise(self, images):
+	def addNoise(self, images, target_labels):
 		noisy_images = []
 		for image in images:
-			noisy_images.append(self.addIndividualNoise(image))
+			noisy_images.append(self.addIndividualNoise(image, target_labels))
 		return np.array(noisy_images)
 
 
@@ -26,7 +27,7 @@ class Gaussian(Noise):
 		self.var = var
 		self.sigma = self.var ** 0.5
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		row, col, ch= image.shape
 		gauss = np.random.normal(self.mean, self.sigma, (row, col, ch))
 		gauss = gauss.reshape(row, col, ch)
@@ -40,7 +41,7 @@ class SaltPepper(Noise):
 		self.s_vs_p = s_vs_p
 		self.amount = amount
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		row, col, ch= image.shape
 		out = np.copy(image)
 		# Salt mode
@@ -58,7 +59,7 @@ class Poisson(Noise):
 	def __init__(self):
 		super(Poisson, self).__init__()
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		vals = len(np.unique(image))
 		vals = 2 ** np.ceil(np.log2(vals))
 		noisy = np.random.poisson(image * vals) / float(vals)
@@ -69,10 +70,10 @@ class Speckle(Noise):
 	def __init__(self):
 		super(Speckle, self).__init__()
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		row, col, ch = image.shape
 		gauss = np.random.randn(row, col, ch) / 15
-		gauss = gauss.reshape(row, col, ch)        
+		gauss = gauss.reshape(row, col, ch)
 		noisy = image + image * gauss
 		return noisy
 
@@ -128,7 +129,7 @@ class Perlin(Noise):
 			t[i, :, j, :] = np.matmul(np.matmul(d0, at), d1).reshape(ns, ns)
 		return m
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels=None):
 		row, col, ch = image.shape
 		assert(row == col)
 		if row % 56 == 0:
@@ -144,10 +145,10 @@ class AdversarialNoise(Noise):
 		super(AdversarialNoise, self).__init__(model)
 		self.attack_object = None
 		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
-		self.sess = sess
 
-	def addIndividualNoise(self, image):
+	def addIndividualNoise(self, image, target_labels):
 		self.attack_params['batch_size'] = 1
+		self.attack_params['y_target'] = target_labels
 		mini_batch = [image]
 		return self.attack_object.generate_np(mini_batch, **self.attack_params)[0]
 
@@ -202,3 +203,4 @@ def get_relevant_noise(noise_string):
 	else:
 		raise NotImplementedError("%s noise is not implemented!" % (noise_string))
 	return None
+

@@ -24,9 +24,10 @@ class Bagging:
 			resized_images.append(cv2.resize(image, new_size))
 		return np.array(resized_images)
 
-	def attackModel(self, images, target_size):
+	def attackModel(self, images, target_size, target_labels=None):
 		# Heuristic to combine these attack sample points
 		perturbed_images = []
 		for attack in self.attacks:
-			perturbed_images.append(self.resize(attack.addNoise(images), target_size))
+			perturbed_images.append(self.resize(attack.addNoise(images, target_labels), target_size))
 		return perturbed_images
+
