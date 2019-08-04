@@ -10,6 +10,8 @@ from keras import backend as K
 import numpy as np
 import sys
 
+import face_model
+
 
 class SiameseNetwork:
 	def __init__(self, shape, modelName, learningRate=1.0):
@@ -184,3 +186,16 @@ class RESNET50:
 
 	def process(self, X):
 		return self.model.predict(self.preprocess(X), batch_size=128)
+
+
+class ArcFace:
+	def __init__(self, shape):
+		args = {"image-size": shape}
+		self.model = face_model.FaceModel(args)
+
+	def preprocess(self, X):
+		return X
+
+	def process(self, X):
+		return [self.model.get_feature(self.preprocess(X)) for x in X]
+
