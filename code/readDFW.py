@@ -80,8 +80,9 @@ def getAllTrainData(prefix, trainFolder, imageRes, model, combine_normal_imp=Fal
 			fileName = impath.rsplit('.', 1)[0]
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
-				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print(img.shape)
+				if img.shape[0] !=imageRes[0] or img.shape[1] != imageRes[1] or img.shape[2] !=3:
+					print("Image re-shape error occured. Exiting!")
+					exit()
 				if '_h_' in fileName:
 					if combine_normal_imp:
 						X_person_normal.append(img) 
@@ -121,8 +122,9 @@ def getRawTrainData(prefix, trainFolder, imageRes):
 			fileName = impath.rsplit('.', 1)[0]
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
-				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print(img.shape)
+				if img.shape[0] !=imageRes[0] or img.shape[1] != imageRes[1] or img.shape[2] !=3:
+					print("Image re-shape error occured. Exiting!")
+					exit()
 				if '_h_' in fileName:
 					X_person_dig.append(img)
 				elif '_I_' in fileName:
@@ -259,8 +261,9 @@ def getAllTestdata(prefix, fileList):
 			fileName = impath.rsplit('.', 1)[0]
 			try:
 				img = cv2.resize(np.asarray(Image.open(lookupFile(fullName)).convert('RGB'), dtype=np.float32), imageRes)
-				if img.shape[0] !=224 or img.shape[1] != 224 or img.shape[2] !=3:
-					print(img.shape)
+				if img.shape[0] !=imageRes[0] or img.shape[1] != imageRes[1] or img.shape[2] !=3:
+					print("Image re-shape error occured. Exiting!")
+					exit()
 				if '_h_' in fileName:
 					X_person_dig.append(img)
 				elif '_I_' in fileName:

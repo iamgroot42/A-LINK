@@ -2,6 +2,7 @@ from itertools import product, count
 import numpy as np
 import cv2
 from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
+from cleverhans.utils_keras import KerasModelWrapper
 
 
 class Noise(object):
@@ -21,7 +22,7 @@ class Noise(object):
 
 
 class Gaussian(Noise):
-	def __init__(self, mean=10, var=10):
+	def __init__(self, mean=10, var=10, model=None, sess=None):
 		super(Gaussian, self).__init__()
 		self.mean = mean
 		self.var = var
@@ -36,7 +37,7 @@ class Gaussian(Noise):
 
 
 class SaltPepper(Noise):
-	def __init__(self, s_vs_p=0.5, amount=0.004):
+	def __init__(self, s_vs_p=0.5, amount=0.004, model=None, sess=None):
 		super(SaltPepper, self).__init__()
 		self.s_vs_p = s_vs_p
 		self.amount = amount
@@ -56,7 +57,7 @@ class SaltPepper(Noise):
 
 
 class Poisson(Noise):
-	def __init__(self):
+	def __init__(self, model=None, sess=None):
 		super(Poisson, self).__init__()
 
 	def addIndividualNoise(self, image, target_labels=None):
@@ -67,7 +68,7 @@ class Poisson(Noise):
 
 
 class Speckle(Noise):
-	def __init__(self):
+	def __init__(self, model=None, sess=None):
 		super(Speckle, self).__init__()
 
 	def addIndividualNoise(self, image, target_labels=None):
@@ -79,7 +80,7 @@ class Speckle(Noise):
 
 
 class Perlin(Noise):
-	def __init__(self):
+	def __init__(self, model=None, sess=None):
 		super(Perlin, self).__init__()
 
 	def individualFilterNoise(self, size, ns):
@@ -142,9 +143,10 @@ class Perlin(Noise):
 
 class AdversarialNoise(Noise):
 	def __init__(self, model, sess):
-		super(AdversarialNoise, self).__init__(model)
+		super(AdversarialNoise, self).__init__(model, sess)
 		self.attack_object = None
 		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
+		self.wrapped_model = KerasModelWrapper(self.model)
 
 	def addIndividualNoise(self, image, target_labels):
 		self.attack_params['batch_size'] = 1
@@ -156,7 +158,7 @@ class AdversarialNoise(Noise):
 class Momentum(AdversarialNoise):
 	def __init__(self, model, sess):
 		super(Momentum, self).__init__(model, sess)
-		self.attack_object = MomentumIterativeMethod(self.model, sess=self.sess)
+		self.attack_object = MomentumIterativeMethod(self.wrapped_model, sess=self.sess)
 		self.attack_params['eps'] = 0.3
 		self.attack_params['eps_iter'] = 0.06
 		self.attack_params['nb_iter'] = 3
@@ -165,14 +167,14 @@ class Momentum(AdversarialNoise):
 class FGSM(AdversarialNoise):
 	def __init__(self, model, sess):
 		super(FGSM, self).__init__(model, sess)
-		self.attack_object = FastGradientMethod(self.model, sess=self.sess)
+		self.attack_object = FastGradientMethod(self.wrapped_model, sess=self.sess)
 		self.attack_params['eps'] = 0.1
 
 
 class Virtual(AdversarialNoise):
 	def __init__(self, model, sess):
 		super(Virtual, self).__init__(model, sess)
-		self.attack_object = VirtualAdversarialMethod(self.model, sess=self.sess)
+		self.attack_object = VirtualAdversarialMethod(self.wrapped_model, sess=self.sess)
 		self.attack_params['xi'] = 1e-6
 		self.attack_params['num_iterations'] = 1
 		self.attack_params['eps'] = 2.0
@@ -181,7 +183,7 @@ class Virtual(AdversarialNoise):
 class Madry(AdversarialNoise):
 	def __init__(self, model, sess):
 		super(Madry, self).__init__(model, sess)
-		self.attack_object = MadryEtAl(self.model, sess=self.sess)
+		self.attack_object = MadryEtAl(self.wrapped_model, sess=self.sess)
 		self.attack_params['nb_iter'] = 5
 		self.attack_params['eps'] = 0.1
 
@@ -203,4 +205,3 @@ def get_relevant_noise(noise_string):
 	else:
 		raise NotImplementedError("%s noise is not implemented!" % (noise_string))
 	return None
-

@@ -26,8 +26,10 @@ keras.backend.set_session(sess)
 
 # Global
 IMAGERES = (224, 224)
+# IMAGERES = (112, 112)
 FEATURERES = (2048,)
 #FEATURERES = (25088,)
+#FEATURERES = (512,)
 ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
@@ -48,7 +50,7 @@ flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-fa
 flags.DEFINE_integer('mixture_ratio', 1, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
-flags.DEFINE_integer('adv_iters', 1, 'Number of noise-addition iterations per iteration of ALINK')
+flags.DEFINE_integer('adv_iters', 5, 'Number of noise-addition iterations per iteration of ALINK')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
 flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
@@ -65,6 +67,7 @@ flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >=
 if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
+	# conversionModel = siamese.ArcFace(IMAGERES, "./arcface_model/model-r100-ii/model")
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
@@ -91,8 +94,8 @@ if __name__ == "__main__":
 
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
-	ensembleNoise = [noise.get_relevant_noise(x)(disguisedFacesModel, sess) for x in desired_noises]
-	if not np.any([isinstance(n, noise.AdversarialNoise) for x in ensembleNoise]):
+	ensembleNoise = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess) for x in desired_noises]
+	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
 		FLAGS.adv_iters = 0
 		print("No adversarial noise specified: skipping nested loop")
 

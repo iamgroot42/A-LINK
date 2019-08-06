@@ -9,6 +9,8 @@ from keras import backend as K
 
 import numpy as np
 import sys
+from easydict import EasyDict as edict
+import cv2
 
 import face_model
 
@@ -189,13 +191,18 @@ class RESNET50:
 
 
 class ArcFace:
-	def __init__(self, shape):
-		args = {"image-size": shape}
+	def __init__(self, shape, model_path):
+		args = edict({
+			"image_size": "%d,%d" % (shape[0], shape[1]),
+			"model": model_path + ",0",
+			"gpu": 1,
+			"threshold": 1.24,
+		})
 		self.model = face_model.FaceModel(args)
 
 	def preprocess(self, X):
-		return X
+		return [cv2.cvtColor(x, cv2.COLOR_RGB2BGR) for x in X]
 
 	def process(self, X):
-		return [self.model.get_feature(self.preprocess(X)) for x in X]
-
+		outputs = []
+		return np.array([self.model.get_feature(self.model.get_input(x)) for x in self.preprocess(X)])
