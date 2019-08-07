@@ -3,12 +3,16 @@ import numpy as np
 import cv2
 from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
 from cleverhans.utils_keras import KerasModelWrapper
+from keras.models import Model
+from keras.layers import Input
+from keras import backend as K
 
 
 class Noise(object):
-	def __init__(self, model=None, sess=None):
+	def __init__(self, model=None, sess=None, feature_model=None):
 		self.model = model
 		self.sess = sess
+		self.feature_model = feature_model
 		pass
 
 	def addIndividualNoise(self, image, target_labels=None):
@@ -16,13 +20,19 @@ class Noise(object):
 
 	def addNoise(self, images, target_labels):
 		noisy_images = []
-		for image in images:
-			noisy_images.append(self.addIndividualNoise(image, target_labels))
+		for i, image in enumerate(images):
+			noisy_images.append(self.addIndividualNoise(image, target_labels[i]))
 		return np.array(noisy_images)
+
+	def addPairNoise(self, image_pairs, target_labels):
+		noisy_images = []
+		left_half = self.addNoise(image_pairs[0], target_labels)
+		right_half = self.addNoise(image_pairs[0], target_labels)
+		return [left_half, right_half]
 
 
 class Gaussian(Noise):
-	def __init__(self, mean=10, var=10, model=None, sess=None):
+	def __init__(self, mean=10, var=10, model=None, sess=None, feature_model=None):
 		super(Gaussian, self).__init__()
 		self.mean = mean
 		self.var = var
@@ -37,7 +47,7 @@ class Gaussian(Noise):
 
 
 class SaltPepper(Noise):
-	def __init__(self, s_vs_p=0.5, amount=0.004, model=None, sess=None):
+	def __init__(self, s_vs_p=0.5, amount=0.004, model=None, sess=None, feature_model=None):
 		super(SaltPepper, self).__init__()
 		self.s_vs_p = s_vs_p
 		self.amount = amount
@@ -57,7 +67,7 @@ class SaltPepper(Noise):
 
 
 class Poisson(Noise):
-	def __init__(self, model=None, sess=None):
+	def __init__(self, model=None, sess=None, feature_model=None):
 		super(Poisson, self).__init__()
 
 	def addIndividualNoise(self, image, target_labels=None):
@@ -68,7 +78,7 @@ class Poisson(Noise):
 
 
 class Speckle(Noise):
-	def __init__(self, model=None, sess=None):
+	def __init__(self, model=None, sess=None, feature_model=None):
 		super(Speckle, self).__init__()
 
 	def addIndividualNoise(self, image, target_labels=None):
@@ -80,7 +90,7 @@ class Speckle(Noise):
 
 
 class Perlin(Noise):
-	def __init__(self, model=None, sess=None):
+	def __init__(self, model=None, sess=None, feature_model=None):
 		super(Perlin, self).__init__()
 
 	def individualFilterNoise(self, size, ns):
@@ -142,48 +152,84 @@ class Perlin(Noise):
 
 
 class AdversarialNoise(Noise):
-	def __init__(self, model, sess):
-		super(AdversarialNoise, self).__init__(model, sess)
+	def __init__(self, model, sess, feature_model):
+		super(AdversarialNoise, self).__init__(model, sess, feature_model)
 		self.attack_object = None
 		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
-		self.wrapped_model = KerasModelWrapper(self.model)
+		
+	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
+	# Since attack only modifies one image at a time, fix one image and perturb the other
+	# Currently supported only for both-keras models (no arcnet featurization model)
+	def get_e2e_model(self, right_image):
+		inp_l = Input((224, 224, 3))
+		feature_l = self.feature_model.model(inp_l)
 
-	def addIndividualNoise(self, image, target_labels):
-		self.attack_params['batch_size'] = 1
-		self.attack_params['y_target'] = target_labels
-		mini_batch = [image]
-		return self.attack_object.generate_np(mini_batch, **self.attack_params)[0]
+		def operateWithConstant(input_batch):
+			tf_constant = K.constant(self.feature_model.process(np.expand_dims(right_image, 0)))
+			batch_size = K.shape(input_batch)[0]
+			tiled_constant = K.tile(tf_constant, (batch_size, 1, 1, 1))
+			return tiled_constant
+
+		feature_r = Input()
+		feature_r = Lambda(operateWithConstant)(feature_r)
+		# feature_r = Input(K.constant(self.feature_model.process(np.expand_dims(right_image, 0))))
+		feature_output = self.model.siamese_net([feature_l, feature_r])
+		return Model(inputs=inp_l, outputs=feature_output)
+
+	def addIndividualNoise(self, image_pair, target_label):
+		l_image, r_image = image_pair
+		# Create wrappers, ready attack object
+		wrapped_model = KerasModelWrapper(self.get_e2e_model(r_image))
+		attack_object = self.attack_object(wrapped_model, sess=self.sess)
+		# Ready attack
+		attack_params = self.attack_params.copy()
+		attack_params['y_target'] = np.expand_dims(target_label, 0)
+		mini_batch = np.expand_dims(np.array([l_image]), axis=0)
+		return self.attack_object.generate_np(mini_batch, **attack_params)[0]
+
+	def addPairNoise(self, image_pairs, target_labels):
+		left_half, right_half = [], []
+		for i in range(len(image_pairs[0])):
+			left_half.append(self.addIndividualNoise((image_pairs[0][i], image_pairs[1][i]), target_labels[i]))
+			right_half.append(image_pairs[1][i])
+		return [left_half, right_half]
+
+	# def addPairNoise(self, image_pairs, target_labels):
+	# 	# self.attack_params['y_target'] = np.expand_dims(target_labels, 0)
+	# 	# mini_batch = np.expand_dims(np.array([image]), axis=0)
+	# 	self.attack_params['y_target'] = target_labels
+	# 	return self.attack_object.generate_np(image_pairs, **self.attack_params)
 
 
 class Momentum(AdversarialNoise):
-	def __init__(self, model, sess):
-		super(Momentum, self).__init__(model, sess)
-		self.attack_object = MomentumIterativeMethod(self.wrapped_model, sess=self.sess)
+	def __init__(self, model, sess, feature_model):
+		super(Momentum, self).__init__(model, sess, feature_model)
+		self.attack_object = MomentumIterativeMethod #(self.wrapped_model, sess=self.sess)
 		self.attack_params['eps'] = 0.3
 		self.attack_params['eps_iter'] = 0.06
 		self.attack_params['nb_iter'] = 3
 
 
 class FGSM(AdversarialNoise):
-	def __init__(self, model, sess):
-		super(FGSM, self).__init__(model, sess)
-		self.attack_object = FastGradientMethod(self.wrapped_model, sess=self.sess)
+	def __init__(self, model, sess, feature_model):
+		super(FGSM, self).__init__(model, sess, feature_model)
+		self.attack_object = FastGradientMethod
 		self.attack_params['eps'] = 0.1
 
 
 class Virtual(AdversarialNoise):
-	def __init__(self, model, sess):
-		super(Virtual, self).__init__(model, sess)
-		self.attack_object = VirtualAdversarialMethod(self.wrapped_model, sess=self.sess)
+	def __init__(self, model, sess, feature_model):
+		super(Virtual, self).__init__(model, sess, feature_model)
+		self.attack_object = VirtualAdversarialMethod
 		self.attack_params['xi'] = 1e-6
 		self.attack_params['num_iterations'] = 1
 		self.attack_params['eps'] = 2.0
 
 
 class Madry(AdversarialNoise):
-	def __init__(self, model, sess):
-		super(Madry, self).__init__(model, sess)
-		self.attack_object = MadryEtAl(self.wrapped_model, sess=self.sess)
+	def __init__(self, model, sess, feature_model):
+		super(Madry, self).__init__(model, sess, feature_model)
+		self.attack_object = MadryEtAl
 		self.attack_params['nb_iter'] = 5
 		self.attack_params['eps'] = 0.1
 

@@ -79,8 +79,8 @@ class FaceModel:
     #print(bbox)
     #print(points)
     # nimg = face_preprocess.preprocess(face_img, bbox, points, image_size='112,112')
-    nimg = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB) #nimg = cv2.cvtColor(nimg, cv2.COLOR_BGR2RGB)
-    aligned = np.transpose(nimg, (2,0,1))
+    #nimg = cv2.cvtColor(nimg, cv2.COLOR_BGR2RGB)
+    aligned = np.transpose(face_img, (2,0,1)) #aligned = np.transpose(nimg, (2,0,1))
     return aligned
 
   def get_feature(self, aligned):

@@ -70,7 +70,7 @@ if __name__ == "__main__":
 	# conversionModel = siamese.ArcFace(IMAGERES, "./arcface_model/model-r100-ii/model")
 
 	# Load images, convert to feature vectors for faster processing
-	(X_plain, X_dig, X_imp) = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
+	(X_plain, X_dig, X_imp)  = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
 	(X_plain_raw, X_dig_raw) = readDFW.getRawTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES)
 
 	# Some sanity checks
@@ -94,24 +94,24 @@ if __name__ == "__main__":
 
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
-	ensembleNoise = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess) for x in desired_noises]
+	ensembleNoise  = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess, feature_model=conversionModel) for x in desired_noises]
 	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
 		FLAGS.adv_iters = 0
 		print("No adversarial noise specified: skipping nested loop")
 
 	# Construct ensemble of models
 	ensemble = [siamese.SiameseNetwork(FEATURERES, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models+1)]
-	bag = committee.Bagging(ensemble, ensembleNoise)
+	bag      = committee.Bagging(ensemble, ensembleNoise)
 
 	if FLAGS.train_disguised_model:
 		# Create generators for disguised model
-		normGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
-		normImpGen = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
+		normGen     = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
+		normImpGen  = readDFW.getNormalGenerator(X_imp, FLAGS.batch_size)
 		impGenNorm  = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
 
 		# Train/Finetune disguised-faces model
 		print('Training disguised-faces model')
-		dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
+		dataGen   = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
 		disguisedFacesModel.save()
 		exit()
@@ -138,9 +138,9 @@ if __name__ == "__main__":
 	print('Finetuned undisguised-faces models')
 
 	# Train disguised-faces model only when batch length crosses threshold
-	train_df_left_x = np.array([])
+	train_df_left_x  = np.array([])
 	train_df_right_x = np.array([])
-	train_df_y = np.array([])
+	train_df_y       = np.array([])
 
 	# Do something about catastrophic forgetting (?)
 	UN_SIZE = 0
@@ -150,7 +150,7 @@ if __name__ == "__main__":
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 	for ii in range(0, len(X_dig_post), FLAGS.alink_bs):
 		print("\nIteration #%d" % ((ii / FLAGS.alink_bs) + 1))
-		plain_part = X_plain_raw[ii: ii + FLAGS.alink_bs]
+		plain_part    = X_plain_raw[ii: ii + FLAGS.alink_bs]
 		disguise_part = X_dig_post[ii: ii + FLAGS.alink_bs]
 
 		# Create pairs of images
@@ -169,8 +169,9 @@ if __name__ == "__main__":
 		for _ in range(FLAGS.adv_iters):
 
 			# Get images with added noise
-			m1_labels = np.argmax(ensemblePredictions, axis=1)
-			noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
+			m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
+			noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels)
+			# noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
 
 			# Get features back from noisy images
 			noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
@@ -179,17 +180,18 @@ if __name__ == "__main__":
 			mp = int(len(noisy_data) / float(len(ensembleNoise)))
 			adv_tune_left_x  = np.concatenate([noisy_data[0][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
 			adv_tune_right_x = np.concatenate([noisy_data[1][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
-			tune_left_x      = np.concatenate((adv_tune_left_x,  batch_x_features[0]))
-			tune_right_x     = np.concatenate((adv_tune_right_x, batch_x_features[1]))
-			tune_y           = np.concatenate((m1_labels, m1_labels))
+			tune_left_x      = np.concatenate((adv_tune_left_x,  batch_x_features[0]), 0)
+			tune_right_x     = np.concatenate((adv_tune_right_x, batch_x_features[1]), 0)
+			tune_y           = np.concatenate((m1_labels, m1_labels), 0)
 			sample_weight    = [FLAGS.adv_mix_ratio] * len(m1_labels) + [1] * len(m1_labels)
 
 			# Fine-tune M2 on adversarial + clean examples
 			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, FLAGS.ft_epochs, 16, 1, sample_weight=sample_weight)
 
 		# Get images with added noise
-		m1_labels = np.argmax(ensemblePredictions, axis=1)
-		noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
+		m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
+		noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels)
+		# noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
 
 		# Get features back from noisy images
 		noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
@@ -200,8 +202,8 @@ if __name__ == "__main__":
 		for dp in disguisedPredictions:
 			disparities = []
 			for j in range(len(dp)):
-				c1 = dp[j][0]
-				c2 = ensemblePredictions[j][0]
+				c1 = dp[j][1]
+				c2 = ensemblePredictions[j][1]
 				if FLAGS.blind_strategy:
 					if (c1 >= 0.5) != (c2 >= 0.5):
 						disparities.append(j)
@@ -220,7 +222,7 @@ if __name__ == "__main__":
 		queryIndices = []
 		for j in misclassifiedIndices:
 			# If ensemble's predictions not in grey area:
-			ensemble_prediction = ensemblePredictions[j][0]
+			ensemble_prediction = ensemblePredictions[j][1]
 			if ensemble_prediction <= 0.5 - FLAGS.eps or ensemble_prediction >= 0.5 + FLAGS.eps:
 				c1 = ensemble_prediction >= 0.5
 				c2 = batch_y[j][0] >= 0.5
@@ -237,7 +239,7 @@ if __name__ == "__main__":
 
 		intermediate = []
 		for i in queryIndices:
-			intermediate.append(ensemblePredictions[i][0])
+			intermediate.append(ensemblePredictions[i][1])
 		intermediate = np.array(intermediate)
 
 		# Create equal partitions while mixing multiple types of noise together
@@ -263,13 +265,13 @@ if __name__ == "__main__":
 				Y_old       = np.concatenate((Y_old, Y_old_temp))
 			if FLAGS.augment:
 				batch_x_aug, batch_y_aug = helpers.augment_data([batch_x[0][queryIndices], batch_x[1][queryIndices]], helpers.roundoff(intermediate), 1)
-				batch_x_aug_features = [conversionModel.process(p) for p in batch_x_aug]
-				train_df_left_x  = np.concatenate((train_df_left_x,  batch_x_aug_features[0], X_old_left))
-				train_df_right_x = np.concatenate((train_df_right_x, batch_x_aug_features[1], X_old_right))
-				train_df_y       = np.concatenate((train_df_y, batch_y_aug, Y_old))
+				batch_x_aug_features     = [conversionModel.process(p) for p in batch_x_aug]
+				train_df_left_x          = np.concatenate((train_df_left_x,  batch_x_aug_features[0], X_old_left))
+				train_df_right_x         = np.concatenate((train_df_right_x, batch_x_aug_features[1], X_old_right))
+				train_df_y               = np.concatenate((train_df_y, batch_y_aug, Y_old))
 			else:
-				print(len(train_df_left_x), len(batch_x_features[0][queryIndices]), len(X_old_left), "left")
-				print(len(train_df_right_x), len(batch_x_features[1][queryIndices]), len(X_old_right), "right")
+				# print(len(train_df_left_x), len(batch_x_features[0][queryIndices]), len(X_old_left), "left")
+				# print(len(train_df_right_x), len(batch_x_features[1][queryIndices]), len(X_old_right), "right")
 				train_df_left_x  = np.concatenate((train_df_left_x,  batch_x_features[0][queryIndices], X_old_left))
 				train_df_right_x = np.concatenate((train_df_right_x, batch_x_features[1][queryIndices], X_old_right))
 				train_df_y       = np.concatenate((train_df_y, helpers.roundoff(intermediate), Y_old))
@@ -291,4 +293,3 @@ if __name__ == "__main__":
 
 	# Save retrained model
 	disguisedFacesModel.save(FLAGS.out_model)
-

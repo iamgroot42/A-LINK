@@ -6,6 +6,7 @@ from keras_vggface import utils
 from keras.optimizers import Adadelta, rmsprop
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from keras import backend as K
+from keras.utils import to_categorical
 
 import numpy as np
 import sys
@@ -19,14 +20,15 @@ class SiameseNetwork:
 	def __init__(self, shape, modelName, learningRate=1.0):
 		self.learningRate = learningRate
 		self.modelName = modelName
-		left_input = Input(shape)
+		left_input  = Input(shape)
 		right_input = Input(shape)
 		# Define Siamese Network using shared weights
-		L1_layer = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
+		L1_layer    = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
 		L1_distance = L1_layer([left_input, right_input])
-		hidden = Dense(512, activation='relu')(L1_distance)
-		hidden2 = Dense(64, activation='relu')(hidden)
-		prediction = Dense(1, activation='sigmoid')(hidden2)
+		hidden      = Dense(512, activation='relu')(L1_distance)
+		hidden2     = Dense(64, activation='relu')(hidden)
+		prediction  = Dense(2, activation='softmax')(hidden2)
+		# prediction = Dense(1, activation='sigmoid')(hidden2)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
@@ -41,8 +43,11 @@ class SiameseNetwork:
 
 	def finetune(self, X, Y, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=1)
-		reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
-		self.siamese_net.fit(self.preprocess(X), Y, batch_size=batch_size, epochs=epochs, validation_split=0.2, verbose=verbose, callbacks=[early_stop, reduce_lr])
+		reduce_lr  = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=5, min_lr=0.01, verbose=verbose)
+		# One-hot encoding
+		Y_encoded = to_categorical(Y, num_classes=2)
+		self.siamese_net.fit(self.preprocess(X), Y_encoded, batch_size=batch_size, epochs=epochs,
+			validation_split=0.2, verbose=verbose, callbacks=[early_stop, reduce_lr])
 
 	def testAccuracy(self, X, Y, batch_size=512):
 		n_correct, total = 0, 0
@@ -67,7 +72,7 @@ class SiameseNetwork:
 
 	def customTrainModel(self, dataGen, epochs, batch_size, valRatio=0.2, n_steps=320000, preprocess=False):
 		steps_per_epoch = int(n_steps / batch_size)
-		for _ in range(epochs):
+		for eno in range(epochs):
 			train_loss, val_loss = 0, 0
 			train_acc, val_acc = 0, 0
 			for i in range(steps_per_epoch):
@@ -78,19 +83,23 @@ class SiameseNetwork:
 				indices = np.random.permutation(len(y))
 				splitPoint = int(len(y) * valRatio)
 				x_train, y_train = [ pp[indices[splitPoint:]] for pp in x], y[indices[splitPoint:]]
-				x_test, y_test = [ pp[indices[:splitPoint]] for pp in x], y[indices[:splitPoint]]
-				class_1_weight = len(y_train)/np.sum(y_train == 1)
-				class_0_weight = len(y_train)/np.sum(y_train == 0)
-				scaling_factor = float(class_1_weight + class_0_weight)
-				class_weight = {0: class_0_weight/scaling_factor, 1:class_1_weight/scaling_factor}
-				# class_weight = {0: 0.5, 1:0.5}
+				x_test, y_test   = [ pp[indices[:splitPoint]] for pp in x], y[indices[:splitPoint]]
+				class_1_weight   = len(y_train) / np.sum(y_train == 1)
+				class_0_weight   = len(y_train) / np.sum(y_train == 0)
+				scaling_factor   = float(class_1_weight + class_0_weight)
+				class_weight     = {0: class_0_weight / scaling_factor, 1:class_1_weight / scaling_factor}
+				# One-hot encoding
+				y_train = to_categorical(y_train, num_classes=2)
+				y_test  = to_categorical(y_test, num_classes=2)
+				# Train on batch
 				train_metrics = self.siamese_net.train_on_batch(x_train, y_train, class_weight=class_weight)
 				train_loss += train_metrics[0]
-				train_acc += train_metrics[1]
+				train_acc  += train_metrics[1]
+				# Test on batch
 				val_metrics = self.siamese_net.test_on_batch(x_test, y_test)
 				val_loss += val_metrics[0]
-				val_acc += val_metrics[1]
-				sys.stdout.write("%d / %d : Tr loss: %f, Tr acc: %f, Vl loss: %f, Vl acc: %f  \r" % (i+1, steps_per_epoch, train_loss/(i+1), train_acc/(i+1), val_loss/(i+1), val_acc/(i+1)))
+				val_acc  += val_metrics[1]
+				sys.stdout.write("Epoch %d : %d / %d : Tr loss: %f, Tr acc: %f, Vl loss: %f, Vl acc: %f  \r" % (eno+1, i+1, steps_per_epoch, train_loss/(i+1), train_acc/(i+1), val_loss/(i+1), val_acc/(i+1)))
 				sys.stdout.flush()
 			print("\n")
 
@@ -119,8 +128,7 @@ class SmallRes(SiameseNetwork, object):
 		self.learningRate = learningRate
 		self.modelName = name
 		convnet = Sequential()
-		convnet.add(Conv2D(32, (3, 3), padding='same',
-					input_shape=imageShape))
+		convnet.add(Conv2D(32, (3, 3), padding='same', input_shape=imageShape))
 		convnet.add(Activation('relu'))
 		convnet.add(Conv2D(32, (3, 3)))
 		convnet.add(Activation('relu'))
@@ -138,15 +146,16 @@ class SmallRes(SiameseNetwork, object):
 		convnet.add(Dense(featureShape[0]))
 		convnet.add(Activation('relu'))
 
-		left_input = Input(imageShape)
+		left_input  = Input(imageShape)
 		right_input = Input(imageShape)
-		encoded_l = convnet(left_input)
-		encoded_r = convnet(right_input)
-		L1_layer = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
+		encoded_l   = convnet(left_input)
+		encoded_r   = convnet(right_input)
+		L1_layer    = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
 		L1_distance = L1_layer([encoded_l, encoded_r])
-		hidden = Dense(128, activation='relu')(L1_distance)
-		hidden2 = Dense(32, activation='relu')(hidden)
-		prediction = Dense(1, activation='relu')(hidden2)
+		hidden      = Dense(128, activation='relu')(L1_distance)
+		hidden2     = Dense(32, activation='relu')(hidden)
+		# prediction = Dense(1, activation='sigmoid')(hidden2)
+		prediction  = Dense(2, activation='softmax')(hidden2)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
@@ -165,7 +174,6 @@ class FaceVGG16:
 		last_layer = vgg_model.get_layer('pool5').output
 		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
-		print(self.model.output_shape)
 
 	def preprocess(self, X):
 		X_temp = np.copy(X)
@@ -201,7 +209,7 @@ class ArcFace:
 		self.model = face_model.FaceModel(args)
 
 	def preprocess(self, X):
-		return [cv2.cvtColor(x, cv2.COLOR_RGB2BGR) for x in X]
+		return X
 
 	def process(self, X):
 		outputs = []
