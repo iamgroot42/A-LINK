@@ -203,7 +203,7 @@ class ArcFace:
 		args = edict({
 			"image_size": "%d,%d" % (shape[0], shape[1]),
 			"model": model_path + ",0",
-			"gpu": 1,
+			"gpu": 0, #1,
 			"threshold": 1.24,
 		})
 		self.model = face_model.FaceModel(args)

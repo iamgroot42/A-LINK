@@ -26,8 +26,8 @@ class Noise(object):
 
 	def addPairNoise(self, image_pairs, target_labels):
 		noisy_images = []
-		left_half = self.addNoise(image_pairs[0], target_labels)
-		right_half = self.addNoise(image_pairs[0], target_labels)
+		left_half  = self.addNoise(image_pairs[0], target_labels)
+		right_half = self.addNoise(image_pairs[1], target_labels)
 		return [left_half, right_half]
 
 
@@ -159,27 +159,31 @@ class AdversarialNoise(Noise):
 		
 	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
 	# Since attack only modifies one image at a time, fix one image and perturb the other
-	# Currently supported only for both-keras models (no arcnet featurization model)
+	# Currently supported only for keras models (no arcnet featurization model)
 	def get_e2e_model(self, right_image):
-		inp_l = Input((224, 224, 3))
-		feature_l = self.feature_model.model(inp_l)
-
-		def operateWithConstant(input_batch):
-			tf_constant = K.constant(self.feature_model.process(np.expand_dims(right_image, 0)))
-			batch_size = K.shape(input_batch)[0]
-			tiled_constant = K.tile(tf_constant, (batch_size, 1, 1, 1))
-			return tiled_constant
-
-		feature_r = Input()
-		feature_r = Lambda(operateWithConstant)(feature_r)
-		# feature_r = Input(K.constant(self.feature_model.process(np.expand_dims(right_image, 0))))
-		feature_output = self.model.siamese_net([feature_l, feature_r])
-		return Model(inputs=inp_l, outputs=feature_output)
+		feature_r_input = Input(tensor=K.constant(np.expand_dims(right_image, 0)))
+		feature_r = self.feature_model.model(feature_r_input)
+		# print("layers:")
+		# for layer in self.model.siamese_net.layers:
+			# print(layer)
+		print("siamese net keras architecture:", self.model.siamese_net.inputs, self.model.siamese_net.outputs)
+		print("DEBUG STATEMENT")
+		print("feature model architecture:", self.feature_model.model.input, self.feature_model.model.output)
+		print(self.model.siamese_net.output)
+		feature_output = self.model.siamese_net([self.feature_model.model.output, feature_r])
+		# feature_output = self.model.siamese_net([self.feature_model.model.output, self.feature_model.model.output])
+		# Above not supported (apparently by Keras); need to copy paste layers
+		return Model(inputs=self.feature_model.model.input, outputs=feature_output)
 
 	def addIndividualNoise(self, image_pair, target_label):
 		l_image, r_image = image_pair
+		# Get model-ready features for right image
+		# r_image_feature = self.feature_model.process(np.expand_dims(r_image, 0))
 		# Create wrappers, ready attack object
-		wrapped_model = KerasModelWrapper(self.get_e2e_model(r_image))
+		e2e_model = self.get_e2e_model(r_image)
+		print("end to end model", e2e_model)
+		wrapped_model = KerasModelWrapper(e2e_model)
+		# wrapped_model = KerasModelWrapper(self.get_e2e_model(r_image_feature))
 		attack_object = self.attack_object(wrapped_model, sess=self.sess)
 		# Ready attack
 		attack_params = self.attack_params.copy()
