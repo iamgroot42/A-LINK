@@ -32,7 +32,7 @@ ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
+flags.DEFINE_string('dataDirPrefix', 'DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
 flags.DEFINE_string('out_model', 'arcWACV_models/postALINK', 'Name of model to be saved after finetuning')
@@ -129,6 +129,7 @@ if __name__ == "__main__":
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
 		elif not individualModel.maybeLoadFromMemory():
+			print('Training undisguised-faces model')
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
