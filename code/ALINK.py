@@ -78,7 +78,7 @@ if __name__ == "__main__":
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
 	assert(0 <= FLAGS.adv_mix_ratio and FLAGS.adv_mix_ratio <= 1)
-	print("Noise that will be used for ALINK: %s" % (FLAGS.noise))
+	print(">> Noise that will be used for ALINK: %s" % (FLAGS.noise))
 
 	# Set X_dig_post for finetuning second version of model
 	if FLAGS.split_ratio > 0:
@@ -97,7 +97,7 @@ if __name__ == "__main__":
 	ensembleNoise  = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess, feature_model=conversionModel) for x in desired_noises]
 	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
 		FLAGS.adv_iters = 0
-		print("No adversarial noise specified: skipping nested loop")
+		print(">> No adversarial noise specified: skipping nested loop")
 
 	# Construct ensemble of models
 	ensemble = [siamese.SiameseNetwork(FEATURERES, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models+1)]
@@ -110,14 +110,14 @@ if __name__ == "__main__":
 		impGenNorm  = readDFW.getImposterGenerator(X_dig_pre, X_imp, FLAGS.batch_size)
 
 		# Train/Finetune disguised-faces model
-		print('Training disguised-faces model')
+		print('>> Training disguised-faces model')
 		dataGen   = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
 		disguisedFacesModel.save()
 		exit()
 	else:
 		disguisedFacesModel.maybeLoadFromMemory()
-		print('Loaded disguised-faces model from memory')
+		print('>> Loaded disguised-faces model from memory')
 
 	# Create generators
 	normGen     = readDFW.getNormalGenerator(X_plain, FLAGS.batch_size)
@@ -135,7 +135,7 @@ if __name__ == "__main__":
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
-	print('Finetuned undisguised-faces models')
+	print('>> Finetuned undisguised-faces models')
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_left_x  = np.array([])
@@ -146,7 +146,7 @@ if __name__ == "__main__":
 	UN_SIZE = 0
 
 	# Framework begins
-	print("Framework beginning with a pool of %d" % (len(X_dig_post)))
+	print(">> Framework beginning with a pool of %d" % (len(X_dig_post)))
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 	for ii in range(0, len(X_dig_post), FLAGS.alink_bs):
 		print("\nIteration #%d" % ((ii / FLAGS.alink_bs) + 1))
@@ -285,11 +285,11 @@ if __name__ == "__main__":
 		# Stop algorithm if limit reached/exceeded
 		# if int((FLAGS.active_ratio * len(X_dig_post) * (FLAGS.alink_bs - 1)) / 2) <= ACTIVE_COUNT:
 		if int(FLAGS.active_ratio * UN_SIZE) <= ACTIVE_COUNT:
-			print("Specified limit reached! Stopping algorithm")
+			print(">> Specified limit reached! Stopping algorithm")
 			break
 
 	# Print count of images queried so far
-	print("Active Count: %d out of %d" % (ACTIVE_COUNT, UN_SIZE))
+	print(">> Active Count: %d out of %d" % (ACTIVE_COUNT, UN_SIZE))
 
 	# Save retrained model
 	disguisedFacesModel.save(FLAGS.out_model)

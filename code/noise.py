@@ -3,8 +3,8 @@ import numpy as np
 import cv2
 from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
 from cleverhans.utils_keras import KerasModelWrapper
-from keras.models import Model
-from keras.layers import Input
+from keras.models import Model, Sequential
+from keras.layers import Input, Lambda, Activation
 from keras import backend as K
 
 
@@ -156,40 +156,47 @@ class AdversarialNoise(Noise):
 		super(AdversarialNoise, self).__init__(model, sess, feature_model)
 		self.attack_object = None
 		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
-		
+
 	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
-	# Since attack only modifies one image at a time, fix one image and perturb the other
-	# Currently supported only for keras models (no arcnet featurization model)
+	# Attack modifies one image at a time: fix one image, perturb the other
+	# Currently supports only Keras models (no arcnet featurization model)
 	def get_e2e_model(self, right_image):
-		feature_r_input = Input(tensor=K.constant(np.expand_dims(right_image, 0)))
-		feature_r = self.feature_model.model(feature_r_input)
-		# print("layers:")
-		# for layer in self.model.siamese_net.layers:
-			# print(layer)
-		print("siamese net keras architecture:", self.model.siamese_net.inputs, self.model.siamese_net.outputs)
-		print("DEBUG STATEMENT")
-		print("feature model architecture:", self.feature_model.model.input, self.feature_model.model.output)
-		print(self.model.siamese_net.output)
-		feature_output = self.model.siamese_net([self.feature_model.model.output, feature_r])
-		# feature_output = self.model.siamese_net([self.feature_model.model.output, self.feature_model.model.output])
-		# Above not supported (apparently by Keras); need to copy paste layers
-		return Model(inputs=self.feature_model.model.input, outputs=feature_output)
+		# Locate Lambda layer
+		lambda_layer = 0
+		for i, layer in enumerate(self.model.siamese_net.layers):
+			if "lambda_" in layer.name:
+				lambda_layer = i
+				break
+		# Create new L-1 layer with one input (right image) fixed
+		right_feature  = self.feature_model.process(np.expand_dims(right_image, 0))
+		fixed_L1_layer = Lambda(lambda tensor:K.abs(tensor - right_feature))
+		siamese_input  = fixed_L1_layer(self.feature_model.model.output)
+		# Clone dense layers of siamese network into new model (super hacky, not proud of it but hey it works!)
+		final_output = siamese_input
+		dense_clone_layers = self.model.getDenseBarebones()
+		for layer in dense_clone_layers:
+			final_output = layer(final_output)
+		# Add softmax layer
+		final_output = Activation('softmax')(final_output)
+		# cleverhans-ready model
+		model_for_adversary = Model(self.feature_model.model.input, final_output)
+		# Copy weights for last dense layers
+		for i in range(len(dense_clone_layers)):
+			model_for_adversary.layers[i - (len(dense_clone_layers) + 1)].set_weights(self.model.siamese_net.layers[lambda_layer + 1 + i].get_weights())
+		# model_for_adversary = Model(self.feature_model.model.input, siamese_output)
+		return model_for_adversary
 
 	def addIndividualNoise(self, image_pair, target_label):
 		l_image, r_image = image_pair
-		# Get model-ready features for right image
-		# r_image_feature = self.feature_model.process(np.expand_dims(r_image, 0))
 		# Create wrappers, ready attack object
 		e2e_model = self.get_e2e_model(r_image)
-		print("end to end model", e2e_model)
 		wrapped_model = KerasModelWrapper(e2e_model)
-		# wrapped_model = KerasModelWrapper(self.get_e2e_model(r_image_feature))
 		attack_object = self.attack_object(wrapped_model, sess=self.sess)
 		# Ready attack
 		attack_params = self.attack_params.copy()
 		attack_params['y_target'] = np.expand_dims(target_label, 0)
 		mini_batch = np.expand_dims(np.array([l_image]), axis=0)
-		return self.attack_object.generate_np(mini_batch, **attack_params)[0]
+		return attack_object.generate_np(mini_batch, **attack_params)[0]
 
 	def addPairNoise(self, image_pairs, target_labels):
 		left_half, right_half = [], []
@@ -255,3 +262,4 @@ def get_relevant_noise(noise_string):
 	else:
 		raise NotImplementedError("%s noise is not implemented!" % (noise_string))
 	return None
+

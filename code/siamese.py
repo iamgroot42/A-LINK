@@ -20,6 +20,7 @@ class SiameseNetwork:
 	def __init__(self, shape, modelName, learningRate=1.0):
 		self.learningRate = learningRate
 		self.modelName = modelName
+		self.shape = shape
 		left_input  = Input(shape)
 		right_input = Input(shape)
 		# Define Siamese Network using shared weights
@@ -27,11 +28,18 @@ class SiameseNetwork:
 		L1_distance = L1_layer([left_input, right_input])
 		hidden      = Dense(512, activation='relu')(L1_distance)
 		hidden2     = Dense(64, activation='relu')(hidden)
-		prediction  = Dense(2, activation='softmax')(hidden2)
-		# prediction = Dense(1, activation='sigmoid')(hidden2)
+		prediction  = Dense(2)(hidden2)
+		prediction  = Activation('softmax')(prediction)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
+
+	def getDenseBarebones(self):
+		layers = []
+		layers.append(Dense(512, activation='relu'))
+		layers.append(Dense(64, activation='relu'))
+		layers.append(Dense(2))
+		return layers
 
 	def trainModel(self, trainDatagen, valGen, epochs, batch_size, verbose=1):
 		early_stop = EarlyStopping(monitor='val_loss', min_delta=0.1, patience=5, verbose=verbose)
@@ -154,11 +162,18 @@ class SmallRes(SiameseNetwork, object):
 		L1_distance = L1_layer([encoded_l, encoded_r])
 		hidden      = Dense(128, activation='relu')(L1_distance)
 		hidden2     = Dense(32, activation='relu')(hidden)
-		# prediction = Dense(1, activation='sigmoid')(hidden2)
-		prediction  = Dense(2, activation='softmax')(hidden2)
+		prediction  = Dense(2)(hidden2)
+		prediction  = Activation('softmax')(prediction)
 		self.siamese_net = Model(inputs=[left_input, right_input], outputs=prediction)
 		# Compile and prepare network
 		self.siamese_net.compile(loss="binary_crossentropy", optimizer=Adadelta(self.learningRate), metrics=['accuracy'])
+
+	def getDenseBarebones(self):
+		layers = []
+		layers.append(Dense(128, activation='relu'))
+		layers.append(Dense(32, activation='relu'))
+		layers.append(Dense(2))
+		return layers
 
 	def preprocess(self, X):
 		X_temp = [ (x - 128.) / 128. for x in X]
