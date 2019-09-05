@@ -155,7 +155,7 @@ class AdversarialNoise(Noise):
 	def __init__(self, model, sess, feature_model):
 		super(AdversarialNoise, self).__init__(model, sess, feature_model)
 		self.attack_object = None
-		self.attack_params = {'clip_min': 0.0, 'clip_max': 1.0}
+		self.attack_params = {'clip_min': 0.0, 'clip_max': 255.0}
 
 	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
 	# Attack modifies one image at a time: fix one image, perturb the other
@@ -190,12 +190,13 @@ class AdversarialNoise(Noise):
 		l_image, r_image = image_pair
 		# Create wrappers, ready attack object
 		e2e_model = self.get_e2e_model(r_image)
+		# Dummy prediction to see if it even works
 		wrapped_model = KerasModelWrapper(e2e_model)
 		attack_object = self.attack_object(wrapped_model, sess=self.sess)
 		# Ready attack
 		attack_params = self.attack_params.copy()
 		attack_params['y_target'] = np.expand_dims(target_label, 0)
-		mini_batch = np.expand_dims(np.array([l_image]), axis=0)
+		mini_batch = np.array([l_image])
 		return attack_object.generate_np(mini_batch, **attack_params)[0]
 
 	def addPairNoise(self, image_pairs, target_labels):
@@ -225,7 +226,7 @@ class FGSM(AdversarialNoise):
 	def __init__(self, model, sess, feature_model):
 		super(FGSM, self).__init__(model, sess, feature_model)
 		self.attack_object = FastGradientMethod
-		self.attack_params['eps'] = 0.1
+		self.attack_params['eps'] = 10.0
 
 
 class Virtual(AdversarialNoise):

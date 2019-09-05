@@ -16,12 +16,12 @@ from sklearn.metrics import confusion_matrix
 from sets import Set
 
 # Set seed for reproducability
-tf.set_random_seed(42)
+tf.compat.v1.set_random_seed(42)
 
 # Don't hog GPU
-config = tf.ConfigProto()
+config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth=True
-sess = tf.Session(config=config)
+sess = tf.compat.v1.Session(config=config)
 keras.backend.set_session(sess)
 
 # Global
@@ -67,6 +67,7 @@ flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >=
 if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
+	# conversionModel = siamese.FaceVGG16(IMAGERES)
 	# conversionModel = siamese.ArcFace(IMAGERES, "./arcface_model/model-r100-ii/model")
 
 	# Load images, convert to feature vectors for faster processing
@@ -114,6 +115,7 @@ if __name__ == "__main__":
 		dataGen   = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 		disguisedFacesModel.customTrainModel(dataGen, FLAGS.dig_epochs, FLAGS.batch_size, 0.2)
 		disguisedFacesModel.save()
+		print(">> Trained disguised-faces model. Please restart script without the --train_disguised_model flag")
 		exit()
 	else:
 		disguisedFacesModel.maybeLoadFromMemory()

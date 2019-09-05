@@ -107,7 +107,7 @@ class SiameseNetwork:
 				val_metrics = self.siamese_net.test_on_batch(x_test, y_test)
 				val_loss += val_metrics[0]
 				val_acc  += val_metrics[1]
-				sys.stdout.write("Epoch %d : %d / %d : Tr loss: %f, Tr acc: %f, Vl loss: %f, Vl acc: %f  \r" % (eno+1, i+1, steps_per_epoch, train_loss/(i+1), train_acc/(i+1), val_loss/(i+1), val_acc/(i+1)))
+				sys.stdout.write("Epoch %d : %d / %d : Tr loss: %.4f, Tr acc: %.4f, Vl loss: %.4f, Vl acc: %.4f  \r" % (eno+1, i+1, steps_per_epoch, train_loss/(i+1), train_acc/(i+1), val_loss/(i+1), val_acc/(i+1)))
 				sys.stdout.flush()
 			print("\n")
 
