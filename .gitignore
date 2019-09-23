@@ -12,7 +12,6 @@ data*/*
 *_split/*
 models/*
 scores/*
-LOG*
 *.npy
 *.zip
 *.txt
