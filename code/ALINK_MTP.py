@@ -48,7 +48,7 @@ flags.DEFINE_string('testDir', '../../MultiPieSplits/split1/test', 'Path to MTP 
 flags.DEFINE_string('out_model', 'MTP_models/postALINK', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'MTP_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('lowres_basemodel', 'MTP_models/lowresModel', 'Name for model trained on low-res faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin', 'Prefix for ensemble models')
+flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin,speckle', 'Prefix for ensemble models')
 
 flags.DEFINE_integer('lowRes', 48, 'Resolution for low-res model (X,X)')
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
