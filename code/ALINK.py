@@ -96,6 +96,11 @@ if __name__ == "__main__":
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
 	ensembleNoise  = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess, feature_model=conversionModel) for x in desired_noises]
+	adversarialEnsembleNoise = []
+	# Separate out adversarial noise components for attacks
+	for noise in ensembleNoise:
+		if isinstance(noise, noise.AdversarialNoise):
+			adversarialEnsembleNoise.append(noise)
 	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
 		FLAGS.adv_iters = 0
 		print(">> No adversarial noise specified: skipping nested loop")
@@ -172,16 +177,16 @@ if __name__ == "__main__":
 
 			# Get images with added noise
 			m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
-			noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels)
+			noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels, adv_only=True)
 			# noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
 
 			# Get features back from noisy images
 			noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
 
 			# Gather data
-			mp = int(len(noisy_data) / float(len(ensembleNoise)))
-			adv_tune_left_x  = np.concatenate([noisy_data[0][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
-			adv_tune_right_x = np.concatenate([noisy_data[1][i][i*mp:(i+1)*mp] for i in range(len(ensembleNoise))])
+			mp = int(len(noisy_data) / float(len(adversarialEnsembleNoise)))
+			adv_tune_left_x  = np.concatenate([noisy_data[0][i][i*mp:(i+1)*mp] for i in range(len(adversarialEnsembleNoise))])
+			adv_tune_right_x = np.concatenate([noisy_data[1][i][i*mp:(i+1)*mp] for i in range(len(adversarialEnsembleNoise))])
 			tune_left_x      = np.concatenate((adv_tune_left_x,  batch_x_features[0]), 0)
 			tune_right_x     = np.concatenate((adv_tune_right_x, batch_x_features[1]), 0)
 			tune_y           = np.concatenate((m1_labels, m1_labels), 0)
