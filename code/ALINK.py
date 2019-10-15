@@ -50,7 +50,7 @@ flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-fa
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
-flags.DEFINE_integer('adv_iters', 5, 'Number of noise-addition iterations per iteration of ALINK')
+flags.DEFINE_integer('adv_iters', 2, 'Number of noise-addition iterations per iteration of ALINK')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
 flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
@@ -98,9 +98,9 @@ if __name__ == "__main__":
 	ensembleNoise  = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess, feature_model=conversionModel) for x in desired_noises]
 	adversarialEnsembleNoise = []
 	# Separate out adversarial noise components for attacks
-	for noise in ensembleNoise:
-		if isinstance(noise, noise.AdversarialNoise):
-			adversarialEnsembleNoise.append(noise)
+	for n in ensembleNoise:
+		if isinstance(n, noise.AdversarialNoise):
+			adversarialEnsembleNoise.append(n)
 	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
 		FLAGS.adv_iters = 0
 		print(">> No adversarial noise specified: skipping nested loop")
