@@ -158,19 +158,27 @@ class AdversarialNoise(Noise):
 		self.attack_params = {'clip_min': 0.0, 'clip_max': 255.0}
 
 	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
-	# Attack modifies one image at a time: fix one image, perturb the other
+	# Attack modifies both images together
 	# Currently supports only Keras models (no arcnet featurization model)
-	def get_e2e_model(self, right_image):
+	def get_e2e_model(self):
 		# Locate Lambda layer
 		lambda_layer = 0
 		for i, layer in enumerate(self.model.siamese_net.layers):
 			if "lambda_" in layer.name:
 				lambda_layer = i
 				break
-		# Create new L-1 layer with one input (right image) fixed
-		right_feature  = self.feature_model.process(np.expand_dims(right_image, 0))
-		fixed_L1_layer = Lambda(lambda tensor:K.abs(tensor - right_feature))
-		siamese_input  = fixed_L1_layer(self.feature_model.model.output)
+		
+		# Concatenate images along rows
+		new_input  = Input((2 * self.model.shape[0],) + self.model.shape[1:])
+		left_half  = Lambda(lambda x: x[:self.model.shape[0]])(new_input)
+		right_half = Lambda(lambda x: x[self.model.shape[0]:])(new_input)
+
+		left_feature  = self.feature_model.model(left_half)
+		right_feature = self.feature_model.model(right_half)
+
+		L1_layer      = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
+		siamese_input = L1_layer([left_feature, right_feature])
+
 		# Clone dense layers of siamese network into new model (super hacky, not proud of it but hey it works!)
 		final_output = siamese_input
 		dense_clone_layers = self.model.getDenseBarebones()
@@ -179,38 +187,27 @@ class AdversarialNoise(Noise):
 		# Add softmax layer
 		final_output = Activation('softmax')(final_output)
 		# cleverhans-ready model
-		model_for_adversary = Model(self.feature_model.model.input, final_output)
+		model_for_adversary = Model(new_input, final_output)
 		# Copy weights for last dense layers
 		for i in range(len(dense_clone_layers)):
 			model_for_adversary.layers[i - (len(dense_clone_layers) + 1)].set_weights(self.model.siamese_net.layers[lambda_layer + 1 + i].get_weights())
-		# model_for_adversary = Model(self.feature_model.model.input, siamese_output)
 		return model_for_adversary
-
-	def addIndividualNoise(self, image_pair, target_label):
-		l_image, r_image = image_pair
-		# Create wrappers, ready attack object
-		e2e_model = self.get_e2e_model(r_image)
-		# Dummy prediction to see if it even works
-		wrapped_model = KerasModelWrapper(e2e_model)
-		attack_object = self.attack_object(wrapped_model, sess=self.sess)
-		# Ready attack
-		attack_params = self.attack_params.copy()
-		attack_params['y_target'] = np.expand_dims(target_label, 0)
-		mini_batch = np.array([l_image])
-		return attack_object.generate_np(mini_batch, **attack_params)[0]
 
 	def addPairNoise(self, image_pairs, target_labels):
 		left_half, right_half = [], []
-		for i in range(len(image_pairs[0])):
-			left_half.append(self.addIndividualNoise((image_pairs[0][i], image_pairs[1][i]), target_labels[i]))
-			right_half.append(image_pairs[1][i])
-		return [left_half, right_half]
+		
+		# Create wrappers, ready attack object
+		e2e_model = self.get_e2e_model(r_image)
+		wrapped_model = KerasModelWrapper(e2e_model)
+		attack_object = self.attack_object(wrapped_model, sess=self.sess)
 
-	# def addPairNoise(self, image_pairs, target_labels):
-	# 	# self.attack_params['y_target'] = np.expand_dims(target_labels, 0)
-	# 	# mini_batch = np.expand_dims(np.array([image]), axis=0)
-	# 	self.attack_params['y_target'] = target_labels
-	# 	return self.attack_object.generate_np(image_pairs, **self.attack_params)
+		attack_params = self.attack_params.copy()
+		attack_params['y_target'] = target_labels
+		concat_data = np.array([np.concatenate((l, r), axis=0) for (l,r) in image_pairs])
+		perturbed = attack_object.generate_np(concat_data, **attack_params)[0]
+		left_half  = [p[:image_pairs[0].shape[0]] for p in perturbed]
+		right_half = [p[image_pairs[0].shape[0]:] for p in perturbed]
+		return [left_half, right_half]
 
 
 class Momentum(AdversarialNoise):
