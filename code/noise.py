@@ -1,11 +1,10 @@
 from itertools import product, count
 import numpy as np
 import cv2
-from cleverhans.attacks import FastGradientMethod, CarliniWagnerL2, DeepFool, ElasticNetMethod, SaliencyMapMethod, MadryEtAl, MomentumIterativeMethod, VirtualAdversarialMethod
-from cleverhans.utils_keras import KerasModelWrapper
-from keras.models import Model, Sequential
+from keras.models import Model, Sequential, clone_model
 from keras.layers import Input, Lambda, Activation
 from keras import backend as K
+import attack
 
 
 class Noise(object):
@@ -151,96 +150,38 @@ class Perlin(Noise):
 		return noisy
 
 
+class PredictionWrappedModel:
+	def __init__(self, model, feature_model):
+		self.model = model
+		self.feature_model = feature_model
+
+	def predict(self, X):
+		# Split into left and right halves
+		left_half  = [p[:X[0].shape[0]/2] for p in X]
+		right_half = [p[X[0].shape[0]/2:] for p in X]
+		left_features  = self.feature_model.process(left_half)
+		right_features = self.feature_model.process(right_half)
+		return self.model.predict([left_features, right_features])
+
+
 class AdversarialNoise(Noise):
 	def __init__(self, model, sess, feature_model):
 		super(AdversarialNoise, self).__init__(model, sess, feature_model)
-		self.attack_object = None
-		self.attack_params = {'clip_min': 0.0, 'clip_max': 255.0}
-
-	# Concatenate featurization and siamese network to create end to end differentiable model (for attack)
-	# Attack modifies both images together
-	# Currently supports only Keras models (no arcnet featurization model)
-	def get_e2e_model(self):
-		# Locate Lambda layer
-		lambda_layer = 0
-		for i, layer in enumerate(self.model.siamese_net.layers):
-			if "lambda_" in layer.name:
-				lambda_layer = i
-				break
-		
-		# Concatenate images along rows
-		new_input  = Input((2 * self.model.shape[0],) + self.model.shape[1:])
-		left_half  = Lambda(lambda x: x[:self.model.shape[0]])(new_input)
-		right_half = Lambda(lambda x: x[self.model.shape[0]:])(new_input)
-
-		left_feature  = self.feature_model.model(left_half)
-		right_feature = self.feature_model.model(right_half)
-
-		L1_layer      = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
-		siamese_input = L1_layer([left_feature, right_feature])
-
-		# Clone dense layers of siamese network into new model (super hacky, not proud of it but hey it works!)
-		final_output = siamese_input
-		dense_clone_layers = self.model.getDenseBarebones()
-		for layer in dense_clone_layers:
-			final_output = layer(final_output)
-		# Add softmax layer
-		final_output = Activation('softmax')(final_output)
-		# cleverhans-ready model
-		model_for_adversary = Model(new_input, final_output)
-		# Copy weights for last dense layers
-		for i in range(len(dense_clone_layers)):
-			model_for_adversary.layers[i - (len(dense_clone_layers) + 1)].set_weights(self.model.siamese_net.layers[lambda_layer + 1 + i].get_weights())
-		return model_for_adversary
+		# Create wrappers, ready attack object
+		self.e2e_model = PredictionWrappedModel(model, feature_model)
+		self.attacker = attack.PixelAttacker(self.e2e_model)
 
 	def addPairNoise(self, image_pairs, target_labels):
 		left_half, right_half = [], []
 		
-		# Create wrappers, ready attack object
-		e2e_model = self.get_e2e_model(r_image)
-		wrapped_model = KerasModelWrapper(e2e_model)
-		attack_object = self.attack_object(wrapped_model, sess=self.sess)
+		concat_data = [np.concatenate((image_pairs[0][i], image_pairs[1][i]), axis=0) for i in range(len(image_pairs[0]))]
+		img_shape  = image_pairs[0][0].shape
+		perturbed  = self.attacker.attack_all(concat_data, target_labels, dimensions=(2*img_shape[0], img_shape[1]))
 
-		attack_params = self.attack_params.copy()
-		attack_params['y_target'] = target_labels
-		concat_data = np.array([np.concatenate((l, r), axis=0) for (l,r) in image_pairs])
-		perturbed = attack_object.generate_np(concat_data, **attack_params)[0]
-		left_half  = [p[:image_pairs[0].shape[0]] for p in perturbed]
-		right_half = [p[image_pairs[0].shape[0]:] for p in perturbed]
+		left_half  = [p[:p.shape[0]/2] for p in perturbed]
+		right_half = [p[p.shape[0]/2:] for p in perturbed]
+
 		return [left_half, right_half]
-
-
-class Momentum(AdversarialNoise):
-	def __init__(self, model, sess, feature_model):
-		super(Momentum, self).__init__(model, sess, feature_model)
-		self.attack_object = MomentumIterativeMethod #(self.wrapped_model, sess=self.sess)
-		self.attack_params['eps'] = 0.3
-		self.attack_params['eps_iter'] = 0.06
-		self.attack_params['nb_iter'] = 3
-
-
-class FGSM(AdversarialNoise):
-	def __init__(self, model, sess, feature_model):
-		super(FGSM, self).__init__(model, sess, feature_model)
-		self.attack_object = FastGradientMethod
-		self.attack_params['eps'] = 10.0
-
-
-class Virtual(AdversarialNoise):
-	def __init__(self, model, sess, feature_model):
-		super(Virtual, self).__init__(model, sess, feature_model)
-		self.attack_object = VirtualAdversarialMethod
-		self.attack_params['xi'] = 1e-6
-		self.attack_params['num_iterations'] = 1
-		self.attack_params['eps'] = 2.0
-
-
-class Madry(AdversarialNoise):
-	def __init__(self, model, sess, feature_model):
-		super(Madry, self).__init__(model, sess, feature_model)
-		self.attack_object = MadryEtAl
-		self.attack_params['nb_iter'] = 5
-		self.attack_params['eps'] = 0.1
 
 
 def get_relevant_noise(noise_string):
@@ -251,13 +192,10 @@ def get_relevant_noise(noise_string):
 		'speckle': Speckle,
 		'plain': Noise,
 		'perlin': Perlin,
-		'momentum': Momentum,
-		'fgsm': FGSM,
-		'madry': Madry
+		'adversarial': AdversarialNoise,
 	}
 	if noise_string.lower() in noise_mapping:
 		return noise_mapping[noise_string.lower()]
 	else:
 		raise NotImplementedError("%s noise is not implemented!" % (noise_string))
 	return None
-

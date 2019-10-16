@@ -134,9 +134,10 @@ class SiameseNetwork:
 class SmallRes(SiameseNetwork, object):
 	def __init__(self, imageShape, featureShape, name, learningRate):
 		self.learningRate = learningRate
+		self.shape = imageShape
 		self.modelName = name
 		convnet = Sequential()
-		convnet.add(Conv2D(32, (3, 3), padding='same', input_shape=imageShape))
+		convnet.add(Conv2D(32, (3, 3), padding='same', input_shape=self.shape))
 		convnet.add(Activation('relu'))
 		convnet.add(Conv2D(32, (3, 3)))
 		convnet.add(Activation('relu'))
@@ -154,8 +155,8 @@ class SmallRes(SiameseNetwork, object):
 		convnet.add(Dense(featureShape[0]))
 		convnet.add(Activation('relu'))
 
-		left_input  = Input(imageShape)
-		right_input = Input(imageShape)
+		left_input  = Input(self.shape)
+		right_input = Input(self.shape)
 		encoded_l   = convnet(left_input)
 		encoded_r   = convnet(right_input)
 		L1_layer    = Lambda(lambda tensors:K.abs(tensors[0] - tensors[1]))
@@ -185,7 +186,8 @@ class SmallRes(SiameseNetwork, object):
 
 class FaceVGG16:
 	def __init__(self, shape):
-		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=shape + (3,))
+		self.shape = shape + (3,)
+		vgg_model = VGGFace(model='vgg16', include_top=False, input_shape=self.shape)
 		last_layer = vgg_model.get_layer('pool5').output
 		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
@@ -200,7 +202,8 @@ class FaceVGG16:
 
 class RESNET50:
 	def __init__(self, shape):
-		vgg_model = VGGFace(model='resnet50', include_top=False, input_shape=shape + (3,))
+		self.shape = shape + (3,)
+		vgg_model = VGGFace(model='resnet50', include_top=False, input_shape=self.shape)
 		last_layer = vgg_model.get_layer('avg_pool').output
 		out = Flatten(name='flatten')(last_layer)
 		self.model = Model(vgg_model.input, out)
@@ -229,3 +232,4 @@ class ArcFace:
 	def process(self, X):
 		outputs = []
 		return np.array([self.model.get_feature(self.model.get_input(x)) for x in self.preprocess(X)])
+

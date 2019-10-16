@@ -40,7 +40,7 @@ flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data i
 flags.DEFINE_string('out_model', 'WACV_models/postALINK', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'WACV_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('disguised_basemodel', 'WACV_models/disguisedModel', 'Name for model trained on disguised faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,fgsm', 'Prefix for ensemble models')
+flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,adversarial', 'Prefix for ensemble models')
 
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
@@ -50,13 +50,11 @@ flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-fa
 flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
 flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
-flags.DEFINE_integer('adv_iters', 2, 'Number of noise-addition iterations per iteration of ALINK')
 
 flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
 flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
 flags.DEFINE_float('disparity_ratio', 0.25, 'What percentage of data to pick to pass on to oracle')
 flags.DEFINE_float('eps', 0.05, 'Region around equiboundary for even considering querying the oracle')
-flags.DEFINE_float('adv_mix_ratio', 1.0, 'Fraction of model loss to be assigned to adversarial examples (if adversarial noise selected) [0,1]')
 
 flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
@@ -78,7 +76,6 @@ if __name__ == "__main__":
 	assert(0 <= FLAGS.split_ratio and FLAGS.split_ratio <= 1)
 	assert(0 <= FLAGS.disparity_ratio and FLAGS.disparity_ratio <= 1)
 	assert(0 <= FLAGS.eps and FLAGS.eps < 0.5)
-	assert(0 <= FLAGS.adv_mix_ratio and FLAGS.adv_mix_ratio <= 1)
 	print(">> Noise that will be used for ALINK: %s" % (FLAGS.noise))
 
 	# Set X_dig_post for finetuning second version of model
@@ -96,14 +93,6 @@ if __name__ == "__main__":
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
 	ensembleNoise  = [noise.get_relevant_noise(x)(model=disguisedFacesModel, sess=sess, feature_model=conversionModel) for x in desired_noises]
-	adversarialEnsembleNoise = []
-	# Separate out adversarial noise components for attacks
-	for n in ensembleNoise:
-		if isinstance(n, noise.AdversarialNoise):
-			adversarialEnsembleNoise.append(n)
-	if not np.any([isinstance(x, noise.AdversarialNoise) for x in ensembleNoise]):
-		FLAGS.adv_iters = 0
-		print(">> No adversarial noise specified: skipping nested loop")
 
 	# Construct ensemble of models
 	ensemble = [siamese.SiameseNetwork(FEATURERES, FLAGS.ensemble_basepath + str(i), 0.1) for i in range(1, FLAGS.num_ensemble_models+1)]
@@ -171,29 +160,6 @@ if __name__ == "__main__":
 
 		# Get predictions made by committee
 		ensemblePredictions = bag.predict(batch_x_features)
-
-		# Nested loop (if adversarial noise present)
-		for _ in range(FLAGS.adv_iters):
-
-			# Get images with added noise
-			m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
-			noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels, adv_only=True)
-			# noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
-
-			# Get features back from noisy images
-			noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
-
-			# Gather data
-			mp = int(len(noisy_data) / float(len(adversarialEnsembleNoise)))
-			adv_tune_left_x  = np.concatenate([noisy_data[0][i][i*mp:(i+1)*mp] for i in range(len(adversarialEnsembleNoise))])
-			adv_tune_right_x = np.concatenate([noisy_data[1][i][i*mp:(i+1)*mp] for i in range(len(adversarialEnsembleNoise))])
-			tune_left_x      = np.concatenate((adv_tune_left_x,  batch_x_features[0]), 0)
-			tune_right_x     = np.concatenate((adv_tune_right_x, batch_x_features[1]), 0)
-			tune_y           = np.concatenate((m1_labels, m1_labels), 0)
-			sample_weight    = [FLAGS.adv_mix_ratio] * len(m1_labels) + [1] * len(m1_labels)
-
-			# Fine-tune M2 on adversarial + clean examples
-			disguisedFacesModel.finetune([train_df_left_x, train_df_right_x], train_df_y, FLAGS.ft_epochs, 16, 1, sample_weight=sample_weight)
 
 		# Get images with added noise
 		m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
