@@ -127,6 +127,8 @@ if __name__ == "__main__":
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
 			print('Finetuned undisguised-faces models')
+		else:
+			print('Loaded undisguised-faces models')
 
 	# Train disguised-faces model only when batch length crosses threshold
 	train_df_left_x  = np.array([])
