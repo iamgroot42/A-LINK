@@ -40,15 +40,17 @@ class GlobalConstants:
 	low_res = (32,32)
 	# feature_res = (25088,)
 	active_count = 0
+	sess = keras.backend.get_session()
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', '../../MultiPieSplits/split1/train', 'Path to MTP data directory')
-flags.DEFINE_string('testDir', '../../MultiPieSplits/split1/test', 'Path to MTP test data directory')
+flags.DEFINE_string('dataDirPrefix', '../MultiPieSplits/split1/train', 'Path to MTP data directory')
+flags.DEFINE_string('testDir', '../MultiPieSplits/split1/test', 'Path to MTP test data directory')
 flags.DEFINE_string('out_model', 'MTP_models/postALINK', 'Name of model to be saved after finetuning')
 flags.DEFINE_string('ensemble_basepath', 'MTP_models/ensemble', 'Prefix for ensemble models')
 flags.DEFINE_string('lowres_basemodel', 'MTP_models/lowresModel', 'Name for model trained on low-res faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin,speckle', 'Prefix for ensemble models')
+# flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin,speckle,adversarial', 'Noise components')
+flags.DEFINE_string('noise', 'adversarial', 'Noise components')
 
 flags.DEFINE_integer('lowRes', 48, 'Resolution for low-res model (X,X)')
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
@@ -67,7 +69,7 @@ flags.DEFINE_float('eps', 0.1, 'Region around equiboundary for even considering 
 
 flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
-flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
+flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where disparity >= 0.5, otherwise pick according to disparity_ratio')
 
 
 if __name__ == "__main__":
@@ -100,13 +102,16 @@ if __name__ == "__main__":
 
 	# Construct ensemble of models
 	ensemble = [siamese.SiameseNetwork(GlobalConstants.feature_res, FLAGS.ensemble_basepath + str(i), 1e-1) for i in range(1, FLAGS.num_ensemble_models + 1)]
+	
+	# Ready low-resolution model
+	lowResModel = siamese.SmallRes(GlobalConstants.low_res + (3,), GlobalConstants.feature_res, FLAGS.lowres_basemodel + str(FLAGS.lowRes) , 1e-1)
+
 	# Prepare required noises
 	desired_noises = FLAGS.noise.split(',')
-	ensembleNoise = [noise.get_relevant_noise(x)() for x in desired_noises]
+	ensembleNoise = [noise.get_relevant_noise(x)(model=lowResModel, sess=GlobalConstants.sess, feature_model=None) for x in desired_noises]
 
 	# Ready committee of models
 	bag = committee.Bagging(ensemble, ensembleNoise)
-	lowResModel = siamese.SmallRes(GlobalConstants.low_res + (3,), GlobalConstants.feature_res, FLAGS.lowres_basemodel + str(FLAGS.lowRes) , 1e-1)
 
 	if not lowResModel.maybeLoadFromMemory():
 		print('== Training lowres-faces model ==')
@@ -123,18 +128,18 @@ if __name__ == "__main__":
 	normGen = readDFW.getNormalGenerator(X_dig_pre, FLAGS.batch_size)
 
 	# Train/Finetune undisguised model(s), if not already trained
-	for individualModel in ensemble:
-		if FLAGS.refine_models:
-			individualModel.maybeLoadFromMemory()
-			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
-			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
-			individualModel.save()
-		elif not individualModel.maybeLoadFromMemory():
-			print("== Training ensemble model ==")
-			dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
-			individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
-			individualModel.save()
-			exit()
+	# for individualModel in ensemble:
+	# 	if FLAGS.refine_models:
+	# 		individualModel.maybeLoadFromMemory()
+	# 		dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
+	# 		individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
+	# 		individualModel.save()
+	# 	elif not individualModel.maybeLoadFromMemory():
+	# 		print("== Training ensemble model ==")
+	# 		dataGen = readMTP.getGenerator(normGen, FLAGS.batch_size, GlobalConstants.image_res, conversionModel)
+	# 		individualModel.customTrainModel(dataGen, FLAGS.highres_epochs, FLAGS.batch_size, 0.2, 32000)
+	# 		individualModel.save()
+	# 		exit()
 
 	# Train lowres-faces model only when batch length crosses threshold
 	train_lr_left_x  = np.array([])
@@ -166,7 +171,8 @@ if __name__ == "__main__":
 		ensemblePredictions = bag.predict(batch_x_features)
 		
 		# Get images with added noise
-		noisy_data = [bag.attackModel(p, GlobalConstants.low_res) for p in batch_x]
+		m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
+		noisy_data = bag.attackModel(batch_x, GlobalConstants.low_res, m1_labels)
 
 		# Pass these to disguised-faces model, get predictions
 		disguisedPredictions = [lowResModel.predict([noisy_data[0][jj], noisy_data[1][jj]]) for jj in range(len(ensembleNoise))] 

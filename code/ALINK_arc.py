@@ -35,10 +35,10 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('dataDirPrefix', 'DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
-flags.DEFINE_string('out_model', 'arcWACV_models/postALINK', 'Name of model to be saved after finetuning')
-flags.DEFINE_string('ensemble_basepath', 'arcWACV_models/ensemble', 'Prefix for ensemble models')
-flags.DEFINE_string('disguised_basemodel', 'arcWACV_models/disguisedModel', 'Name for model trained on disguised faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,adversarial', 'Prefix for ensemble models')
+flags.DEFINE_string('out_model', 'ARCFace_models/postALINK', 'Name of model to be saved after finetuning')
+flags.DEFINE_string('ensemble_basepath', 'ARCFace_models/ensemble', 'Prefix for ensemble models')
+flags.DEFINE_string('disguised_basemodel', 'ARCFace_models/disguisedModel', 'Name for model trained on disguised faces')
+flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,perlin,speckle,adversarial', 'Noise components')
 
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
@@ -57,11 +57,10 @@ flags.DEFINE_float('eps', 0.05, 'Region around equiboundary for even considering
 flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
 flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
 flags.DEFINE_boolean('train_disguised_model', False, 'Train disguised-face model? (quits after training)')
-flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
+flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where disparity >= 0.5, otherwise pick according to disparity_ratio')
 
 
 if __name__ == "__main__":
-	# Define image featurization model
 	conversionModel = siamese.ArcFace(IMAGERES, "./arcface_model/model-r100-ii/model")
 
 	# Load images, convert to feature vectors for faster processing
@@ -127,18 +126,16 @@ if __name__ == "__main__":
 			dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 			individualModel.customTrainModel(dataGen, FLAGS.undig_epochs, FLAGS.batch_size, 0.2)
 			individualModel.save()
-	print('Finetuned undisguised-faces models')
+			print('Finetuned undisguised-faces models')
 
 	# Train disguised-faces model only when batch length crosses threshold
-	train_df_left_x = np.array([])
+	train_df_left_x  = np.array([])
 	train_df_right_x = np.array([])
-	train_df_y = np.array([])
-
-	# Do something about catastrophic forgetting (?)
-	UN_SIZE = 0
+	train_df_y       = np.array([])
+	UN_SIZE          = 0
 
 	# Framework begins
-	print("Framework beginning with a pool of %d" % (len(X_dig_post)))
+	print("== Framework beginning with a pool of %d" % (len(X_dig_post)))
 	dataGen = readDFW.getGenerator(normGen, normImpGen, impGenNorm, FLAGS.batch_size, 0)
 	for ii in range(0, len(X_dig_post), FLAGS.alink_bs):
 		print("\nIteration #%d" % ((ii / FLAGS.alink_bs) + 1))

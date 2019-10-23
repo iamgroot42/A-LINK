@@ -34,13 +34,13 @@ ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', 'DFW/DFW_Data/', 'Path to DFW data directory')
+flags.DEFINE_string('dataDirPrefix', 'DFW_Data/', 'Path to DFW data directory')
 flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
 flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
-flags.DEFINE_string('out_model', 'WACV_models/postALINK', 'Name of model to be saved after finetuning')
-flags.DEFINE_string('ensemble_basepath', 'WACV_models/ensemble', 'Prefix for ensemble models')
-flags.DEFINE_string('disguised_basemodel', 'WACV_models/disguisedModel', 'Name for model trained on disguised faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,adversarial', 'Prefix for ensemble models')
+flags.DEFINE_string('out_model', 'Densenet_models/postALINK', 'Name of model to be saved after finetuning')
+flags.DEFINE_string('ensemble_basepath', 'Densenet_models/ensemble', 'Prefix for ensemble models')
+flags.DEFINE_string('disguised_basemodel', 'Densenet_models/disguisedModel', 'Name for model trained on disguised faces')
+flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,adversarial', 'Noise components')
 
 flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
 flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
@@ -66,7 +66,6 @@ if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
 	# conversionModel = siamese.FaceVGG16(IMAGERES)
-	# conversionModel = siamese.ArcFace(IMAGERES, "./arcface_model/model-r100-ii/model")
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp)  = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)

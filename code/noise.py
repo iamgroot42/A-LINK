@@ -159,8 +159,12 @@ class PredictionWrappedModel:
 		# Split into left and right halves
 		left_half  = [p[:X[0].shape[0]/2] for p in X]
 		right_half = [p[X[0].shape[0]/2:] for p in X]
-		left_features  = self.feature_model.process(left_half)
-		right_features = self.feature_model.process(right_half)
+		if self.feature_model:
+			left_features  = self.feature_model.process(left_half)
+			right_features = self.feature_model.process(right_half)
+		else:
+			left_features  = left_half
+			right_features = right_half
 		return self.model.predict([left_features, right_features])
 
 
