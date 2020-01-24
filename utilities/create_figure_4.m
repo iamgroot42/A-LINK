@@ -6,3 +6,5 @@ ylim([40 100]);
 ylabel('Accuracy (%)');
 legend({'M_{1}', 'A-LINK', 'A2-LINK'});
 set(gca,'FontSize',20);
+grid on;
+grid minor;
