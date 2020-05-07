@@ -34,38 +34,37 @@ ACTIVE_COUNT = 0
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('dataDirPrefix', 'DFW_Data/', 'Path to DFW data directory')
-flags.DEFINE_string('trainImagesDir', 'Training_data', 'Path to DFW training-data images')
-flags.DEFINE_string('testImagesDir', 'Testing_data', 'Path to DFW testing-data images')
-flags.DEFINE_string('out_model', 'Densenet_models/postALINK', 'Name of model to be saved after finetuning')
-flags.DEFINE_string('ensemble_basepath', 'Densenet_models/ensemble', 'Prefix for ensemble models')
-flags.DEFINE_string('disguised_basemodel', 'Densenet_models/disguisedModel', 'Name for model trained on disguised faces')
-flags.DEFINE_string('noise', 'gaussian,saltpepper,poisson,speckle,adversarial', 'Noise components')
+flags.DEFINE_string('dataDirPrefix',       'DFW_Data/',                                       'Path to DFW data directory')
+flags.DEFINE_string('trainImagesDir',      'Training_data',                                   'Path to DFW training-data images')
+flags.DEFINE_string('testImagesDir',       'Testing_data',                                    'Path to DFW testing-data images')
+flags.DEFINE_string('out_model',           'Densenet_models/postALINK',                       'Name of model to be saved after finetuning')
+flags.DEFINE_string('ensemble_basepath',   'Densenet_models/ensemble',                        'Prefix for ensemble models')
+flags.DEFINE_string('disguised_basemodel', 'Densenet_models/disguisedModel',                  'Name for model trained on disguised faces')
+flags.DEFINE_string('noise',               'gaussian,saltpepper,poisson,speckle,adversarial', 'Noise components')
 
-flags.DEFINE_integer('ft_epochs', 3, 'Number of epochs while finetuning model')
-flags.DEFINE_integer('batch_size', 16, 'Batch size while sampling from unlabelled data')
-flags.DEFINE_integer('dig_epochs', 40, 'Number of epochs while training disguised-faces model')
-flags.DEFINE_integer('undig_epochs', 60, 'Number of epochs while fine-tuning undisguised-faces model')
-flags.DEFINE_integer('batch_send', 64, 'Batch size while finetuning disguised-faces model')
-flags.DEFINE_integer('mixture_ratio', 2, 'Ratio of unperturbed:perturbed examples while finetuning network')
-flags.DEFINE_integer('alink_bs', 16, 'Batch size to be used while running framework')
+flags.DEFINE_integer('ft_epochs',           3, 'Number of epochs while finetuning model')
+flags.DEFINE_integer('batch_size',         16, 'Batch size while sampling from unlabelled data')
+flags.DEFINE_integer('dig_epochs',         40, 'Number of epochs while training disguised-faces model')
+flags.DEFINE_integer('undig_epochs',       60, 'Number of epochs while fine-tuning undisguised-faces model')
+flags.DEFINE_integer('batch_send',         64, 'Batch size while finetuning disguised-faces model')
+flags.DEFINE_integer('mixture_ratio',       2, 'Ratio of unperturbed:perturbed examples while finetuning network')
+flags.DEFINE_integer('alink_bs',           16, 'Batch size to be used while running framework')
 flags.DEFINE_integer('num_ensemble_models', 1, 'Number of models to use in ensemble for undisguised-faces')
 
-flags.DEFINE_float('active_ratio', 1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
-flags.DEFINE_float('split_ratio', 0.5, 'How much of disguised-face data to use for training M2')
+flags.DEFINE_float('active_ratio',     1.0, 'Upper cap on ratio of unlabelled examples to be querried for labels')
+flags.DEFINE_float('split_ratio',      0.5, 'How much of disguised-face data to use for training M2')
 flags.DEFINE_float('disparity_ratio', 0.25, 'What percentage of data to pick to pass on to oracle')
-flags.DEFINE_float('eps', 0.05, 'Region around equiboundary for even considering querying the oracle')
+flags.DEFINE_float('eps',             0.05, 'Region around equiboundary for even considering querying the oracle')
 
-flags.DEFINE_boolean('augment', False, 'Augment data while finetuning covariate-based model?')
-flags.DEFINE_boolean('refine_models', False, 'Refine previously trained models?')
+flags.DEFINE_boolean('augment',               False, 'Augment data while finetuning covariate-based model?')
+flags.DEFINE_boolean('refine_models',         False, 'Refine previously trained models?')
 flags.DEFINE_boolean('train_disguised_model', False, 'Train disguised-face model? (quits after training)')
-flags.DEFINE_boolean('blind_strategy', False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
+flags.DEFINE_boolean('blind_strategy',        False, 'If yes, pick all where dispary >= 0.5, otherwise pick according to disparity_ratio')
 
 
 if __name__ == "__main__":
 	# Define image featurization model
 	conversionModel = siamese.RESNET50(IMAGERES)
-	# conversionModel = siamese.FaceVGG16(IMAGERES)
 
 	# Load images, convert to feature vectors for faster processing
 	(X_plain, X_dig, X_imp)  = readDFW.getAllTrainData(FLAGS.dataDirPrefix, FLAGS.trainImagesDir, IMAGERES, conversionModel)
@@ -163,7 +162,6 @@ if __name__ == "__main__":
 		# Get images with added noise
 		m1_labels  = keras.utils.to_categorical(np.argmax(ensemblePredictions, axis=1), 2)
 		noisy_data = bag.attackModel(batch_x, IMAGERES, m1_labels)
-		# noisy_data = [bag.attackModel(p, IMAGERES, m1_labels) for p in batch_x]
 
 		# Get features back from noisy images
 		noisy_data = [[conversionModel.process(p) for p in part] for part in noisy_data]
