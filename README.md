@@ -3,7 +3,7 @@
 Code for our papers:
 
 -  [`A-LINK: Recognizing Disguised Faces via Active Learning based Inter-Domain Knowledge`](http://iab-rubric.org/papers/2019_BTAS_ALINK.pdf) accepted at [IEEE BTAS 2019](http://ieee-biometrics.org/btas2019/), and
--  ['A2-LINK: Recognizing Disguised Faces via Active Learning and Adversarial Noise based Inter-Domain Knowledge'](https://drive.google.com/file/d/10WxPHZY88RvaZlv8V4eG80OZHnmyBk3e/view) accepted at [IEEE T-BIOM](http://tbiom.ieee-biometrics.org/).
+-  [`A2-LINK: Recognizing Disguised Faces via Active Learning and Adversarial Noise based Inter-Domain Knowledge`](https://ieeexplore.ieee.org/document/9104705) accepted at [IEEE T-BIOM](http://tbiom.ieee-biometrics.org/).
 
 [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/a-link-recognizing-disguised-faces-via-active/heterogeneous-face-recognition-on-cmu-mpie)](https://paperswithcode.com/sota/heterogeneous-face-recognition-on-cmu-mpie?p=a-link-recognizing-disguised-faces-via-active)
 
@@ -19,4 +19,10 @@ If you use this code/algorithm in your research, cite it as follows:
     booktitle={10th IEEE International Conference on Biometrics: Theory, Applications and Systems (BTAS)}
   }
 }
+
+@ARTICLE{9104705,
+  author={A. {Suri} and M. {Vatsa} and R. {Singh}},
+  journal={IEEE Transactions on Biometrics, Behavior, and Identity Science}, 
+  title={A2-LINK: Recognizing Disguised Faces via Active Learning and Adversarial Noise based Inter-Domain Knowledge}, 
+  year={2020}}
 ```
