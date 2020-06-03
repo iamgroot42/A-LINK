@@ -1,4 +1,4 @@
-# A-LINK
+# A-LINK & A2-LINK
 
 Code for our papers:
 
